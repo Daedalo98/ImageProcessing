@@ -101,6 +101,50 @@ def invert_image(img):
     """Subtracts pixel values from max range (255)."""
     return cv2.bitwise_not(img)
 
+def square_image(img, mode="Crop"):
+    """
+    Forces the image into a perfect 1:1 aspect ratio without distorting/squishing the contents.
+    """
+    h, w = img.shape[:2]
+    
+    # If the image is already a perfect square, return it immediately to save compute time
+    if h == w:
+        return img
+        
+    if mode == "Crop":
+        # Find the shortest dimension to determine the square's size
+        side = min(h, w)
+        
+        # Calculate the exact center of the original image
+        cx, cy = w // 2, h // 2
+        
+        # Calculate the top-left corner of the crop box
+        x1 = cx - side // 2
+        y1 = cy - side // 2
+        
+        # Slice the array. (e.g., if image is 1920x1080, side is 1080. Crop keeps the middle 1080 pixels of the width).
+        return img[y1:y1+side, x1:x1+side]
+        
+    elif mode == "Pad":
+        # Find the longest dimension to determine the canvas size
+        side = max(h, w)
+        
+        # Create a blank black canvas of the new square size, matching the original image's color channels and data type
+        if len(img.shape) == 3:
+            canvas = np.zeros((side, side, img.shape[2]), dtype=img.dtype)
+        else:
+            canvas = np.zeros((side, side), dtype=img.dtype)
+            
+        # Calculate where to place the top-left corner of the original image so it sits exactly in the center
+        x_offset = (side - w) // 2
+        y_offset = (side - h) // 2
+        
+        # Paste the original image array into the blank canvas array
+        canvas[y_offset:y_offset+h, x_offset:x_offset+w] = img
+        return canvas
+        
+    return img
+
 # --- Filtering/Morphology ---
 def apply_gaussian_blur(img, ksize):
     """Convolves a Gaussian kernel to reduce high-frequency noise."""
@@ -256,6 +300,9 @@ def get_image_stats(img_array, pil_image=None, file_bytes=None):
 
     return stats
 
+
+# --- Face Landmarking ---
+
 import os
 import urllib.request
 import mediapipe as mp
@@ -264,7 +311,6 @@ from mediapipe.tasks.python import vision
 import streamlit as st
 import plotly.graph_objects as go
 
-@st.cache_resource
 @st.cache_resource
 def get_face_landmarker():
     """
@@ -363,46 +409,82 @@ def extract_landmarks(cropped_img):
     landmarks = [[int(pt.x * w), int(pt.y * h)] for pt in results.face_landmarks[0]]
     return landmarks
 
-def crop_face_bb(img, bounds, bb_type, **kwargs):
+def advanced_crop_face(img, bb_type="Minimum Rectangle", padding=0, exterior_mode="Set Exterior to 0", poly_string=""):
     """
-    2. Creates bounding boxes and crops the image based on user selection.
+    Advanced face isolation using binary masking, morphological padding, and exterior handling.
     """
-    min_x, max_x, min_y, max_y = bounds
+    landmarks = get_face_landmarks(img)
+    if not landmarks:
+        return img # Graceful fallback if no face is found
+
     h, w = img.shape[:2]
     
-    # Calculate current face width and height
+    # 1. Initialize a pure black binary mask matching the image dimensions
+    mask = np.zeros((h, w), dtype=np.uint8)
+    
+    # Extract all X and Y coordinates for easy min/max calculations
+    x_coords = [pt[0] for pt in landmarks]
+    y_coords = [pt[1] for pt in landmarks]
+    min_x, max_x = max(0, min(x_coords)), min(w, max(x_coords))
+    min_y, max_y = max(0, min(y_coords)), min(h, max(y_coords))
+    
     fw, fh = max_x - min_x, max_y - min_y
-    cx, cy = min_x + fw // 2, min_y + fh // 2 # Center of the face
-    
-    if bb_type == "Minimum":
-        # Exactly wraps the face landmarks
-        x1, y1, x2, y2 = min_x, min_y, max_x, max_y
+    cx, cy = min_x + fw // 2, min_y + fh // 2
+
+    # 2. Draw the requested shape onto the mask in pure white (255)
+    if bb_type == "Minimum Rectangle":
+        cv2.rectangle(mask, (min_x, min_y), (max_x, max_y), 255, -1)
         
-    elif bb_type == "Square":
-        # Forces the bounding box to be a square using the larger dimension
+    elif bb_type == "Minimum Square":
         side = max(fw, fh)
-        x1, y1 = cx - side // 2, cy - side // 2
-        x2, y2 = cx + side // 2, cy + side // 2
+        sq_x1, sq_y1 = max(0, cx - side // 2), max(0, cy - side // 2)
+        sq_x2, sq_y2 = min(w, cx + side // 2), min(h, cy + side // 2)
+        cv2.rectangle(mask, (sq_x1, sq_y1), (sq_x2, sq_y2), 255, -1)
         
-    elif bb_type == "Custom":
-        # Uses user-defined width and height centered on the face
-        cw, ch = kwargs.get('custom_w', fw), kwargs.get('custom_h', fh)
-        x1, y1 = cx - cw // 2, cy - ch // 2
-        x2, y2 = cx + cw // 2, cy + ch // 2
+    elif bb_type == "Minimum Oval":
+        # axes expects (width_radius, height_radius)
+        axes = (fw // 2, fh // 2)
+        cv2.ellipse(mask, (cx, cy), axes, 0, 0, 360, 255, -1)
         
-    elif bb_type == "Oval (Oversize)":
-        # Approximates an oval by applying a padding percentage to the bounding box
-        padding = kwargs.get('oversize_pct', 20) / 100.0
-        x1 = int(min_x - (fw * padding))
-        y1 = int(min_y - (fh * padding))
-        x2 = int(max_x + (fw * padding))
-        y2 = int(max_y + (fh * padding))
-    
-    # Boundary safety checks to prevent OpenCV slicing errors
-    x1, y1 = max(0, x1), max(0, y1)
-    x2, y2 = min(w, x2), min(h, y2)
-    
-    return img[y1:y2, x1:x2]
+    elif bb_type == "Polygonal":
+        try:
+            # Parse the comma-separated string of IDs into integers
+            ids = [int(i.strip()) for i in poly_string.split(",") if i.strip().isdigit()]
+            # Ensure valid IDs within the 478 MediaPipe points, and at least 3 points for a polygon
+            valid_pts = [landmarks[i] for i in ids if 0 <= i <= 477]
+            if len(valid_pts) >= 3:
+                # Fill the polygon defined by the user's points
+                pts_array = np.array(valid_pts, np.int32).reshape((-1, 1, 2))
+                cv2.fillPoly(mask, [pts_array], 255)
+            else:
+                # Failsafe: Fall back to rectangle if input is invalid
+                cv2.rectangle(mask, (min_x, min_y), (max_x, max_y), 255, -1)
+        except Exception:
+            cv2.rectangle(mask, (min_x, min_y), (max_x, max_y), 255, -1)
+
+    # 3. Add Padding using Morphological Dilation
+    if padding > 0:
+        # Create a structural element. A circular/elliptical kernel creates smoother padded corners.
+        kernel_size = padding * 2 + 1 # Must be odd
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+        # Dilate pushes the white pixels of the mask outwards by the padding amount
+        mask = cv2.dilate(mask, kernel, iterations=1)
+
+    # 4. Handle the Exterior
+    # Bitwise AND keeps the image pixels where the mask is > 0, setting the rest to pure black.
+    masked_img = cv2.bitwise_and(img, img, mask=mask)
+
+    if exterior_mode == "Set Exterior to 0":
+        # Return the blacked-out image maintaining original dimensions
+        return masked_img
+        
+    elif exterior_mode == "Cut Out":
+        # Find the bounding box of the final padded mask to crop the array physically
+        x, y, w_box, h_box = cv2.boundingRect(mask)
+        # Slicing the array removes the empty space completely
+        return masked_img[y:y+h_box, x:x+w_box]
+
+    return masked_img
 
 def create_interactive_mesh(img, landmarks):
     """
@@ -445,14 +527,6 @@ def align_face_by_two_points(img, landmarks, id1, id2, target1, target2):
     
     h, w = img.shape[:2]
     return cv2.warpAffine(img, M, (w, h))
-
-def extract_face(img, bb_type="Minimum", custom_w=200, custom_h=200, oversize_pct=20):
-    """Pipeline wrapper for face cropping."""
-    landmarks = get_face_landmarks(img)
-    if not landmarks: 
-        return img # Return original gracefully if no face found
-    cropped, _ = crop_and_map_landmarks(img, landmarks, bb_type, custom_w=custom_w, custom_h=custom_h, oversize_pct=oversize_pct)
-    return cropped
 
 def align_face(img, id1, id2, t1_x, t1_y, t2_x, t2_y):
     """Pipeline wrapper for face alignment."""

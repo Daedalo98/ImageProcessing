@@ -5,9 +5,7 @@ import os
 import io
 from PIL import Image
 import uuid
-import functions as fn
-import mediapipe as mp
-import plotly.graph_objects as go
+import img_functions as fn
 
 # ==========================================
 # STREAMLIT UI ARCHITECTURE
@@ -49,8 +47,8 @@ TRANSFORM_CATEGORIES = {
     "Geometric": {
         "label": "Geometric",
         "keys": [
-            "translate_image", "rotate_image", "scale_image", 
-            "shear_image", "flip_image", "crop_image"
+            "translate_image", "rotate_image", "scale_image", "resize_image",
+            "shear_image", "square_image", "flip_image", "crop_image"
         ]
     },
     "Color": {
@@ -77,7 +75,7 @@ TRANSFORM_CATEGORIES = {
     },
     "Face": {
         "label": "Face Processing Studio",
-        "keys": ["extract_face", "align_face"]
+        "keys": ["advanced_crop_face", "align_face"]
     }
 }
 
@@ -94,6 +92,35 @@ def toggle_info(category):
         st.session_state.info_pipeline.remove(category)
     else:
         st.session_state.info_pipeline.append(category)
+
+def move_transform_up(index):
+    """Swaps a pipeline step with the one above it."""
+    if index > 0:
+        pipeline = st.session_state.transform_pipeline
+        pipeline[index - 1], pipeline[index] = pipeline[index], pipeline[index - 1]
+
+def move_transform_down(index):
+    """Swaps a pipeline step with the one below it."""
+    pipeline = st.session_state.transform_pipeline
+    if index < len(pipeline) - 1:
+        pipeline[index + 1], pipeline[index] = pipeline[index], pipeline[index + 1]
+
+def process_and_clear_selections():
+    """
+    Callback function attached to the Add button.
+    Reads the multiselects, adds to pipeline, and resets the widgets safely.
+    """
+    for cat_name in TRANSFORM_CATEGORIES.keys():
+        widget_key = f"multiselect_transform_{cat_name}"
+        # Get selected operations from this category's multiselect
+        selected_ops = st.session_state.get(widget_key, [])
+        
+        # Add them to the pipeline
+        for op in selected_ops:
+            add_transform(op)
+            
+        # Clear the widget's session state safely before it redraws
+        st.session_state[widget_key] = []
 
 # --- SIDEBAR: ALL CONTROLS ---
 with st.sidebar:
@@ -122,22 +149,27 @@ with st.sidebar:
         st.session_state.info_pipeline = [label_to_key[label] for label in selected_labels if label in label_to_key]
 
     # Transformation Pipeline UI
-    with st.expander("➕ Select Transformations"):
-        st.write("Choose a category and add an operation to your pipeline.")
+    with st.expander("➕ Select Transformations to Apply"):
+        st.write("Choose operations across categories, then click add to send them to the pipeline.")
         
-        # 1. Select the Category
-        cat_labels = [cfg["label"] for cfg in TRANSFORM_CATEGORIES.values()]
-        selected_cat_label = st.selectbox("Category", cat_labels)
-        
-        # Find the actual category key based on the label
-        selected_cat_key = next(k for k, v in TRANSFORM_CATEGORIES.items() if v["label"] == selected_cat_label)
-        
-        # 2. Select the Operation (Options NEVER disappear)
-        op_to_add = st.selectbox("Operation", TRANSFORM_CATEGORIES[selected_cat_key]["keys"])
-        
-        if st.button("Add to Pipeline", type="primary", width='stretch'): 
-            add_transform(op_to_add)
-            st.rerun()
+        # Dynamically generate a multiselect for each category
+        for cat_name, cfg in TRANSFORM_CATEGORIES.items():
+            valid_options = [k for k in cfg["keys"] if k is not None]
+            
+            # The widget automatically ties to st.session_state[key]
+            st.multiselect(
+                cfg["label"],
+                options=valid_options,
+                key=f"multiselect_transform_{cat_name}"
+            )
+
+        # Use on_click callback to process and clear BEFORE the rerun
+        st.button(
+            "Add Selected Transformations to Pipeline", 
+            type="primary", 
+            use_container_width=True, 
+            on_click=process_and_clear_selections
+        )
 
     st.header("3. Configure Active Pipeline")
     if len(st.session_state.transform_pipeline) == 0:
@@ -151,9 +183,22 @@ with st.sidebar:
         step_id = step['id']
         
         with st.container(border=True):
-            cols = st.columns([0.8, 0.2])
+            # Create a 4-column layout for Title, Up, Down, Delete
+            cols = st.columns([0.7, 0.1, 0.1, 0.1])
             cols[0].markdown(f"**{i+1}. {op}**")
-            if cols[1].button("❌", key=f"del_{step_id}"):
+            
+            # Move Up button (disabled if it's the first item)
+            if cols[1].button("⬆️", key=f"up_{step_id}", disabled=(i == 0), help="Move step up"):
+                move_transform_up(i)
+                st.rerun()
+                
+            # Move Down button (disabled if it's the last item)
+            if cols[2].button("⬇️", key=f"dw_{step_id}", disabled=(i == len(st.session_state.transform_pipeline) - 1), help="Move step down"):
+                move_transform_down(i)
+                st.rerun()
+                
+            # Delete button
+            if cols[3].button("❌", key=f"del_{step_id}", help="Remove step"):
                 remove_transform(i)
                 st.rerun()
 
@@ -184,11 +229,42 @@ with st.sidebar:
             elif op == "scale_image":
                 params['scale_factor'] = st.number_input("Scale Factor", min_value=0.1, max_value=10.0, value=1.0, step=0.1, key=f"scale_{step_id}",
                     help="Scales the image by the specified factor.")
+            elif op == "resize_image":
+                params['width'] = st.number_input(
+                    "New Width (Pixels)", 
+                    min_value=1, 
+                    max_value=20000, 
+                    value=p_w, 
+                    step=1, 
+                    key=f"rw_{step_id}",
+                    help="Absolute width of the output image in pixels."
+                )
+                params['height'] = st.number_input(
+                    "New Height (Pixels)", 
+                    min_value=1, 
+                    max_value=20000, 
+                    value=p_h, 
+                    step=1, 
+                    key=f"rh_{step_id}",
+                    help="Absolute height of the output image in pixels."
+                )
+                params['interpolation'] = st.selectbox(
+                    "Interpolation Method", 
+                    ["INTER_LINEAR", "INTER_NEAREST", "INTER_CUBIC"], 
+                    key=f"int_{step_id}",
+                    help="LINEAR is standard. NEAREST prevents blurring (great for pixel art/masks). CUBIC is highest quality for making images larger."
+                )
             elif op == "shear_image":
                 params['shx'] = st.number_input("Shear X", min_value=-5.0, max_value=5.0, value=0.0, step=0.1, key=f"shx_{step_id}",
                     help="Shears the image along the X-axis.")
                 params['shy'] = st.number_input("Shear Y", min_value=-5.0, max_value=5.0, value=0.0, step=0.1, key=f"shy_{step_id}",
                     help="Shears the image along the Y-axis.")
+            elif op == "square_image":
+                params['mode'] = st.selectbox(
+                    "Squaring Strategy", 
+                    ["Crop", "Pad"], 
+                    key=f"sq_mode_{step_id}",
+                    help="Choose how to force the 1:1 aspect ratio. 'Crop' finds the shortest side and chops off the excess from the center. 'Pad' finds the longest side and adds black bars to the shorter side to fill it out.")
             elif op == "flip_image":
                 params['mode'] = st.selectbox("Flip Mode", ["Horizontal", "Vertical", "Both"], key=f"flip_{step_id}",
                     help="Horizontal flips left-to-right. Vertical flips top-to-bottom. Both flips in both directions.")
@@ -256,12 +332,6 @@ with st.sidebar:
                     help="The quality of the JPEG image (1-100).")
             
             # --- FACE CONTROLS ---
-            elif op == "extract_face":
-                params['bb_type'] = st.selectbox("Bounding Box Type", ["Minimum", "Square", "Custom", "Oval (Oversize)"], key=f"fbb_{step_id}",
-                    help="Minimum wraps exactly around the face. Square guarantees aspect ratio. Oversize adds padding.")
-                params['custom_w'] = st.number_input("Custom Width", value=200, key=f"fcw_{step_id}")
-                params['custom_h'] = st.number_input("Custom Height", value=200, key=f"fch_{step_id}")
-                params['oversize_pct'] = st.number_input("Oversize (%)", value=20, key=f"fop_{step_id}")
             elif op == "align_face":
                 params['id1'] = st.number_input("Landmark 1 ID", min_value=0, max_value=477, value=33, key=f"fa1_{step_id}",
                     help="Hover over the Main Output image on the right to find the Landmark ID (red dot) you want to target.")
@@ -270,7 +340,27 @@ with st.sidebar:
                 params['t1_y'] = st.number_input("Target 1 Y", value=int(p_h*0.4), key=f"fat1y_{step_id}", help="Where Landmark 1 should move vertically.")
                 params['t2_x'] = st.number_input("Target 2 X", value=int(p_w*0.7), key=f"fat2x_{step_id}", help="Where Landmark 2 should move horizontally.")
                 params['t2_y'] = st.number_input("Target 2 Y", value=int(p_h*0.4), key=f"fat2y_{step_id}", help="Where Landmark 2 should move vertically.")
-
+            elif op == "advanced_crop_face":
+                params['bb_type'] = st.selectbox("Crop Shape", 
+                    ["Minimum Rectangle", "Minimum Square", "Minimum Oval", "Polygonal"], 
+                    key=f"ac_bb_{step_id}",
+                    help="Defines the geometry of the mask used to isolate the face.")
+                
+                # Show string input ONLY if Polygonal is selected
+                if params['bb_type'] == "Polygonal":
+                    params['poly_string'] = st.text_input("Landmark IDs (Comma separated)", 
+                        value="10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109", 
+                        key=f"ac_poly_{step_id}",
+                        help="Enter at least 3 Landmark IDs separated by commas. Hover over the main output mesh to find IDs. Example creates an octagon around the face.")
+                else:
+                    params['poly_string'] = "" # Pass empty if not used
+                
+                params['padding'] = st.number_input("Padding (Pixels)", min_value=0, max_value=500, value=0, step=5, key=f"ac_pad_{step_id}",
+                    help="Puffs the shape outwards. 0 hugs the face exactly. Higher values include more of the background (hair, neck).")
+                
+                params['exterior_mode'] = st.selectbox("Exterior Action", ["Cut Out", "Set Exterior to 0"], key=f"ac_ext_{step_id}",
+                    help="'Cut Out' physically slices the image file down to the masked size. 'Set to 0' leaves the image resolution unchanged but blacks out the background.")
+                
             pipeline_config.append({'op': op, 'params': params})
 
     # Batch Processing Trigger
@@ -341,14 +431,13 @@ if uploaded_files:
         
     with col2:
         st.subheader("Modified Preview (Interactive)")
-        st.caption("Hover to view exact coordinates and data points.")
         
         # Run landmark detection on the CURRENT state of the modified image
         current_landmarks = fn.get_face_landmarks(processed_img)
         
         # Render the interactive Plotly mesh
         fig = fn.create_main_preview(processed_img, current_landmarks, highlight_landmarks)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     orig_stats = fn.get_image_stats(original_img, pil_img, preview_bytes)
     mod_stats = fn.get_image_stats(processed_img)
