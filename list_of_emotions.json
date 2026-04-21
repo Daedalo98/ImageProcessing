@@ -1,9 +1,1 @@
-[
-    "Happy",
-    "Sad",
-    "Angry",
-    "Surprised",
-    "Disgusted",
-    "Fearful",
-    "Neutral"
-]
+["Happy", "Sad", "Angry", "Surprised", "Disgusted", "Fearful", "Neutral", "Yawn"]

@@ -128,7 +128,6 @@ with st.sidebar:
     uploaded_files = st.file_uploader("Upload Images (Select multiple for batch)", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
     output_folder = st.text_input("Output Path", value="./output_images")
 
-    preview_width = preview_height = None
     if uploaded_files:
         preview_bytes = uploaded_files[0].getvalue()
         with Image.open(io.BytesIO(preview_bytes)) as sample_image:
@@ -203,16 +202,16 @@ with st.sidebar:
                 st.rerun()
 
             params = {}
-            max_translate_x = preview_width if preview_width else 500
-            max_translate_y = preview_height if preview_height else 500
+            max_translate_x = preview_width if preview_width else 10000
+            max_translate_y = preview_height if preview_height else 10000
             max_crop_x = max(0, preview_width - 1) if preview_width else 10000
             max_crop_y = max(0, preview_height - 1) if preview_height else 10000
             max_crop_w = preview_width if preview_width else 10000
             max_crop_h = preview_height if preview_height else 10000
             max_ksize = min(preview_width, preview_height, 99) if preview_width and preview_height else 99
 
-            p_w = preview_width if preview_width else 1000
-            p_h = preview_height if preview_height else 1000
+            p_w = preview_width if preview_width else 10000
+            p_h = preview_height if preview_height else 10000
 
             if max_ksize % 2 == 0:
                 max_ksize -= 1
@@ -452,14 +451,26 @@ with st.sidebar:
                 st.success(f"Folder batch completed! Processed {len(folder_files)} images. Log saved to {log_path}")
 
 # --- MAIN LAYOUT (Side-by-Side View) ---
+
+st.header("Live Preview & Information")
+st.text("Apply transformations and see the results in real-time.")
+
+
+# Render Plotly Preview using the ACTIVE (edited) landmarks and the new toggle state
+show_coords_toggle = st.toggle("🔎 Enable Hover Coordinates (Slower rendering)", value=False)
+
 if uploaded_files:
     # Use the first uploaded image for the live preview
     preview_file = uploaded_files[0]
     preview_bytes = preview_file.getvalue()
     pil_img = Image.open(io.BytesIO(preview_bytes))
     original_img = np.array(pil_img)
-    
-        # Process the preview image based on active pipeline
+
+    original_landmarks = fn.get_face_landmarks(original_img)
+    if original_landmarks is None:
+        st.warning("No face landmarks detected in the preview image. Face-related transformations will be disabled.")
+
+    # Process the preview image based on active pipeline
     processed_img = original_img.copy()
     
     # Track which landmarks the user is actively manipulating so we can color them green
@@ -477,20 +488,51 @@ if uploaded_files:
             highlight_landmarks.extend([p['id1'], p['id2']])
 
     col1, col2 = st.columns(2)
-    
+
     with col1:
         st.subheader("Original Image")
-        st.image(original_img, width='stretch')
+        original_show_landmark_toggle = st.toggle("👁️ Show Detected Landmarks", value=False, key="original_show_landmark")
+
+        # Render Plotly Preview using the toggle state
+        if original_show_landmark_toggle:
+            fig_orig = fn.create_main_preview(
+                original_img, 
+                landmarks=original_landmarks, 
+                highlight_ids=highlight_landmarks, 
+                show_coords=show_coords_toggle
+            )
+        else:
+            fig_orig = fn.create_main_preview(
+                original_img, 
+                landmarks=None, 
+                highlight_ids=highlight_landmarks, 
+                show_coords=show_coords_toggle
+            )
+        st.plotly_chart(fig_orig, width='stretch', height='content', key="original_preview")
         
     with col2:
         st.subheader("Modified Preview (Interactive)")
+        show_landmark_toggle = st.toggle("👁️ Show Detected Landmarks", value=False, key="show_landmark")
         
         # Run landmark detection on the CURRENT state of the modified image
         current_landmarks = fn.get_face_landmarks(processed_img)
         
-        # Render the interactive Plotly mesh
-        fig = fn.create_main_preview(processed_img, current_landmarks, highlight_landmarks)
-        st.plotly_chart(fig, width='stretch')
+        # Render Plotly Preview using the toggle state
+        if show_landmark_toggle:
+            fig = fn.create_main_preview(
+                processed_img, 
+                landmarks=current_landmarks, 
+                highlight_ids=highlight_landmarks, 
+                show_coords=show_coords_toggle
+            )
+        else:
+            fig = fn.create_main_preview(
+                processed_img, 
+                landmarks=None, 
+                highlight_ids=highlight_landmarks, 
+                show_coords=show_coords_toggle
+            )
+        st.plotly_chart(fig, width='stretch', height='content', key="modified_preview")
 
     orig_stats = fn.get_image_stats(original_img, pil_img, preview_bytes)
     mod_stats = fn.get_image_stats(processed_img)

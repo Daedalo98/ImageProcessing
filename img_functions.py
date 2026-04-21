@@ -535,28 +535,39 @@ def align_face(img, id1, id2, t1_x, t1_y, t2_x, t2_y):
         return img
     return align_face_by_two_points(img, landmarks, id1, id2, (t1_x, t1_y), (t2_x, t2_y))
 
-def create_main_preview(img, landmarks=None, highlight_ids=None):
-    """Renders the image in Plotly and conditionally overlays the face mesh."""
+
+
+
+def create_main_preview(img: np.ndarray, landmarks: list, highlight_ids: list, show_coords: bool):
+    """Renders the image. Toggles between fast background layout and slow interactive matrix."""
     h, w = img.shape[:2]
     fig = go.Figure()
     
-    # Add image to the background
-    fig.add_layout_image(
-        dict(source=Image.fromarray(img), x=0, y=h, xref="x", yref="y",
-             sizex=w, sizey=h, sizing="stretch", opacity=1, layer="below")
-    )
+    if show_coords:
+        # SLOW/INTERACTIVE MODE: Native go.Image (0,0 is top-left)
+        fig.add_trace(go.Image(z=img))
+    else:
+        # FAST MODE: Layout Background Image (0,0 is bottom-left)
+        fig.add_layout_image(
+            dict(source=Image.fromarray(img), x=0, y=h, xref="x", yref="y",
+                 sizex=w, sizey=h, sizing="stretch", opacity=1, layer="below")
+        )
     
     # Conditionally add the mesh
     if landmarks:
         x = [pt[0] for pt in landmarks]
-        y = [h - pt[1] for pt in landmarks] # Invert Y for Plotly Cartesian plane
+        
+        # Adjust Y-coordinates based on the rendering mode
+        if show_coords:
+            y = [pt[1] for pt in landmarks] # Native image orientation
+        else:
+            y = [h - pt[1] for pt in landmarks] # Invert Y for standard Cartesian plane
+            
         text = [f"ID: {i}" for i in range(len(landmarks))]
         
-        # Base styling for all landmarks
         colors = ['red'] * len(landmarks)
         sizes = [4] * len(landmarks)
         
-        # Highlight specifically selected landmarks
         if highlight_ids:
             for hid in highlight_ids:
                 if 0 <= hid < len(colors):
@@ -567,7 +578,29 @@ def create_main_preview(img, landmarks=None, highlight_ids=None):
         fig.add_trace(go.Scatter(x=x, y=y, mode='markers', text=text,
                                  marker=dict(size=sizes, color=colors), hoverinfo='text'))
                                  
-    fig.update_layout(xaxis=dict(range=[0, w], visible=False),
-                      yaxis=dict(range=[0, h], visible=False, scaleanchor="x"),
-                      margin=dict(l=0, r=0, t=0, b=0), height=600)
+    fig.update_layout(
+        xaxis=dict(range=[0, w] if not show_coords else None, visible=False),
+        yaxis=dict(range=[0, h] if not show_coords else None, visible=False, scaleanchor="x"),
+        margin=dict(l=0, r=0, t=0, b=0), 
+        autosize=True,
+        hovermode="closest"
+    )
     return fig
+
+
+
+
+### --- Emotion List Management ---
+
+import json
+
+def load_emotions(EMOTIONS_FILE: str, DEFAULT_EMOTIONS: list) -> list:
+    """Loads emotions from a local file, or returns defaults if the file doesn't exist."""
+    if os.path.exists(EMOTIONS_FILE):
+        with open(EMOTIONS_FILE, "r") as f:
+            return json.load(f)
+    else:
+        # If the file doesn't exist, create it with default emotions
+        with open(EMOTIONS_FILE, "w") as f:
+            json.dump(DEFAULT_EMOTIONS, f, indent=4)
+            return json.load(f)

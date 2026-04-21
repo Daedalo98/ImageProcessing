@@ -2,72 +2,17 @@ import streamlit as st
 import os
 import json
 import numpy as np
-import plotly.graph_objects as go
 from PIL import Image
 import img_functions as fn
 import random
 
-# Note: If you are still using the drawable canvas for bounding boxes, keep this import:
-# from streamlit_drawable_canvas import st_canvas 
-
-# ==========================================
-# MODULAR FUNCTIONS (Integrated & Updated)
-# ==========================================
-
 EMOTIONS_FILE = "list_of_emotions.json"
 DEFAULT_EMOTIONS = ["Happy", "Sad", "Angry", "Surprised", "Disgusted", "Fearful", "Neutral"]
 
-def load_emotions():
-    """Loads emotions from a local file, or returns defaults if the file doesn't exist."""
-    if os.path.exists(EMOTIONS_FILE):
-        with open(EMOTIONS_FILE, "r") as f:
-            return json.load(f)
-    else:
-        # If the file doesn't exist, create it with default emotions
-        with open(EMOTIONS_FILE, "w") as f:
-            json.dump(DEFAULT_EMOTIONS, f, indent=4)
-            return json.load(f)
-
 # Initialize emotions in session state so it persists during reruns
 if "emotion_options" not in st.session_state:
-    st.session_state.emotion_options = load_emotions()
+    st.session_state.emotion_options = fn.load_emotions(EMOTIONS_FILE, DEFAULT_EMOTIONS)
 
-def create_main_preview(img, landmarks=None, highlight_ids=None, preview_height=600):
-    """Renders the image in Plotly and conditionally overlays the face mesh."""
-    h, w = img.shape[:2]
-    fig = go.Figure()
-    
-    # Add image to the background
-    fig.add_layout_image(
-        dict(source=Image.fromarray(img), x=0, y=h, xref="x", yref="y",
-             sizex=w, sizey=h, sizing="stretch", opacity=1, layer="below")
-    )
-    
-    # Conditionally add the mesh
-    if landmarks:
-        x = [pt[0] for pt in landmarks]
-        y = [h - pt[1] for pt in landmarks] # Invert Y for Plotly Cartesian plane
-        text = [f"ID: {i}" for i in range(len(landmarks))]
-        
-        # Base styling for all landmarks
-        colors = ['red'] * len(landmarks)
-        sizes = [4] * len(landmarks)
-        
-        # Highlight specifically selected landmarks
-        if highlight_ids:
-            for hid in highlight_ids:
-                if 0 <= hid < len(colors):
-                    colors[hid] = 'lawngreen'
-                    sizes[hid] = 10
-                    text[hid] = f"ID: {hid} (SELECTED)"
-
-        fig.add_trace(go.Scatter(x=x, y=y, mode='markers', text=text,
-                                 marker=dict(size=sizes, color=colors), hoverinfo='text'))
-                                 
-    fig.update_layout(xaxis=dict(range=[0, w], visible=False),
-                      yaxis=dict(range=[0, h], visible=False, scaleanchor="x"),
-                      margin=dict(l=0, r=0, t=0, b=0), height=preview_height)
-    return fig
 
 # ==========================================
 # MAIN APP LOGIC
@@ -80,8 +25,7 @@ with st.sidebar:
     
     with st.expander("📁 Paths & Configuration", expanded=True):
         image_dir = st.text_input("Images Directory", placeholder="e.g., data/images/")
-        preview_height = st.slider("Preview Height (px)", 400, 1000, 600)
-        
+
         # Initialize directories dynamically if user confirms
         if st.button("Initialize Directories"):
             os.makedirs(image_dir, exist_ok=True)
@@ -107,24 +51,102 @@ with st.sidebar:
                 st.rerun() # Refresh to update the selectbox
     intensity = st.slider("Emotion Intensity", 1, 10, 5)
     
-    action_units = st.multiselect("Action Units", [
-        "AU 01 - Inner Brow Raiser", "AU 02 - Outer Brow Raiser", 
-        "AU 04 - Brow Lowerer", "AU 09 - Nose Wrinkler", 
-        "AU 10 - Upper Lip Raiser", "AU 12 - Lip Corner Puller"
-    ])
+    facs_aus_upper_face = [
+        # --- Upper Face ---
+        "AU 01 - Inner Brow Raiser", 
+        "AU 02 - Outer Brow Raiser (unilateral, right side)", 
+        "AU 04 - Brow Lowerer",
+        "AU 05 - Upper Lid Raiser", 
+        "AU 06 - Cheek Raiser", 
+        "AU 07 - Lid Tightener"
+        ]
+
+    facs_aus_eye_eyelid = [
+        # --- Eye & Eyelid Positions ---
+        "AU 41 - Lid Droop", 
+        "AU 42 - Slit", 
+        "AU 43 - Eyes Closed",
+        "AU 44 - Squint", 
+        "AU 45 - Blink", 
+        "AU 46 - Wink",
+
+        "AU 61 - Eyes Turn Left", 
+        "AU 62 - Eyes Turn Right", 
+        "AU 63 - Eyes Up",
+        "AU 64 - Eyes Down", 
+        "AU 65 - Walleye", 
+        "AU 66 - Cross-eye"
+        ]
+    
+    facs_aus_lower_face = [
+        # --- Lower Face ---
+        "AU 09 - Nose Wrinkler", 
+        "AU 10 - Upper Lip Raiser", 
+        "AU 11 - Nasolabial Deepener",
+        "AU 12 - Lip Corner Puller", 
+        "AU 13 - Cheek Puffer", 
+        "AU 14 - Dimpler",
+        "AU 15 - Lip Corner Depressor", 
+        "AU 16 - Lower Lip Depressor", 
+        "AU 17 - Chin Raiser",
+        "AU 18 - Lip Puckerer", 
+        
+        "AU 20 - Lip Stretcher", 
+        
+        "AU 22 - Lip Funneler",
+        "AU 23 - Lip Tightener", 
+        "AU 24 - Lip Pressor", 
+        "AU 25 - Lips Part",
+        "AU 26 - Jaw Drop", 
+        "AU 27 - Mouth Stretch", 
+        "AU 28 - Lip Suck"
+        ]
+    
+    facs_aus_misc_supp = [
+        # --- Miscellaneous / Supplemental ---
+        "AU 29 - Jaw Thrust", 
+        "AU 30 - Jaw Sideways", 
+        "AU 31 - Jaw Clencher",
+        "AU 32 - Lip Bite", 
+        "AU 33 - Cheek Blow", 
+        "AU 34 - Cheek Puff",
+        "AU 35 - Cheek Suck", 
+        "AU 36 - Tongue Show", 
+        "AU 37 - Lip Wipe",
+        "AU 38 - Nostril Dilator", 
+        "AU 39 - Nostril Compressor"
+        ]
+
+    facs_aus_head_orient = [    
+        # --- Head Orientations ---
+        "AU 51 - Head Turn Left", 
+        "AU 52 - Head Turn Right", 
+        "AU 53 - Head Up",
+        "AU 54 - Head Down", 
+        "AU 55 - Head Tilt Left", 
+        "AU 56 - Head Tilt Right",
+        "AU 57 - Head Forward", 
+        "AU 58 - Head Back"
+        ]
+
+    action_units_upperface = st.multiselect("Action Units (Upper Face)", facs_aus_upper_face)
+    action_units_eyes = st.multiselect("Action Units (Eyes/Eyelids)", facs_aus_eye_eyelid)
+    action_units_lowerface = st.multiselect("Action Units (Lower Face)", facs_aus_lower_face)
+    action_units_misc = st.multiselect("Action Units (Misc/Supplemental)", facs_aus_misc_supp)
+    action_units_head = st.multiselect("Action Units (Head Orientations)", facs_aus_head_orient)
     
 # --- State Management for Images ---
 if "image_idx" not in st.session_state:
     st.session_state.image_idx = 0
 
+# Initialize an image list state
+if "image_list" not in st.session_state:
+    st.session_state.image_list = []
+
 # Check if path exists before listing
 if not os.path.exists(image_dir):
     st.warning(f"Image directory '{image_dir}' not found. Please update the path in the sidebar or click 'Initialize Directories'.")
     st.stop()
-
-# Initialize an image list state
-if "image_list" not in st.session_state:
-    st.session_state.image_list = []
 
 if os.path.exists(image_dir):
     # Get all valid images
@@ -138,6 +160,34 @@ if not st.session_state.image_list:
     st.info(f"No images found in '{image_dir}'. Add some images to begin labeling.")
     st.stop()
 
+# Use the state list for the current image
+images = st.session_state.image_list
+
+# Load Current Image
+current_image_name = images[st.session_state.image_idx]
+image_path = os.path.join(image_dir, current_image_name)
+
+if not images:
+    st.info(f"No images found in '{image_dir}'. Add some images to begin labeling.")
+    st.stop()
+
+# --- State Management for Landmark Groups ---
+
+# MediaPipe configuration (Persists across all images)
+if "mp_groups" not in st.session_state:
+    st.session_state.mp_groups = {
+        "Face Oval": {"color": "white", "ids": [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109]},
+        "Left Eye": {"color": "cyan", "ids": [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246]},
+        "Right Eye": {"color": "cyan", "ids": [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398]},
+        "Mouth": {"color": "red", "ids": [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 185, 40, 39, 37, 0, 267, 269, 270, 409]}
+    }
+
+# Manual landmarks (Specific to the current image)
+current_manual_key = f"manual_{current_image_name}"
+if current_manual_key not in st.session_state:
+    # Structure: {"Group Name": {"color": "hex", "points": [[x, y], [x, y]]}}
+    st.session_state[current_manual_key] = {}
+
 # Randomization Toggle in the Sidebar (Add this inside the sidebar block)
 shuffle_toggle = st.sidebar.checkbox("🔀 Randomize Image Flow")
 if shuffle_toggle and "is_shuffled" not in st.session_state:
@@ -150,17 +200,6 @@ elif not shuffle_toggle and "is_shuffled" in st.session_state:
     del st.session_state["is_shuffled"]
     st.session_state.image_idx = 0
 
-# Use the state list for the current image
-images = st.session_state.image_list
-
-if not images:
-    st.info(f"No images found in '{image_dir}'. Add some images to begin labeling.")
-    st.stop()
-
-# Load Current Image
-current_image_name = images[st.session_state.image_idx]
-image_path = os.path.join(image_dir, current_image_name)
-
 # Convert PIL Image to Numpy Array for MediaPipe & Plotly compatibility
 pil_image = Image.open(image_path).convert("RGB")
 numpy_image = np.array(pil_image)
@@ -170,61 +209,82 @@ st.write(f"**Current Image:** {current_image_name} ({st.session_state.image_idx 
 
 # --- Main Visualization ---
 
-# Use a session state key linked to the current image so we don't carry over old landmarks
-current_lm_key = f"lm_{current_image_name}"
+# Render Plotly Preview using the ACTIVE (edited) landmarks and the new toggle state
+show_coords_toggle = st.toggle("🔎 Enable Hover Coordinates (Slower rendering)", value=False)
 
-if current_lm_key not in st.session_state:
-    # Run MediaPipe ONLY if we haven't already processed this image in the current session
-    raw_lms = fn.get_face_landmarks(numpy_image)
-    st.session_state[current_lm_key] = raw_lms if raw_lms else []
+landmarks = fn.get_face_landmarks(numpy_image)
+if landmarks is None:
+    st.warning("No face landmarks detected in the preview image.")
+else:
+    st.success(f"Detected {len(landmarks)} landmarks in the preview image.")
 
-# Retrieve mutable landmarks from state
-active_landmarks = st.session_state[current_lm_key]
+show_landmark_toggle = st.toggle("👁️ Show Detected Landmarks", value=False, key="show_landmark")
 
-if not active_landmarks:
-    st.warning("No face detected. You can add manual landmarks below.")
+# We place this right above the chart so it's easy to adjust while looking at the image
+zoom_factor = st.slider("🔍 Zoom Level", min_value=1.0, max_value=5.0, value=1.0, step=0.1)
 
-# UI to modify landmarks
-with st.expander("🛠️ Edit Landmarks (Add/Remove)"):
-    col_add, col_rem = st.columns(2)
+# Generate Base Figure
+if show_landmark_toggle:
+    fig_orig = fn.create_main_preview(
+        numpy_image, 
+        landmarks=landmarks, 
+        highlight_ids=None, 
+        show_coords=show_coords_toggle
+    )
+else:
+    fig_orig = fn.create_main_preview(
+        numpy_image, 
+        landmarks=None, 
+        highlight_ids=None, 
+        show_coords=show_coords_toggle
+    )
+
+# Modify Axes for Zooming
+if zoom_factor > 1.0:
+    h, w = numpy_image.shape[:2]
     
-    with col_add:
-        st.write("Add Landmark")
-        new_x = st.number_input("X Coordinate", min_value=0, max_value=numpy_image.shape[1], value=0)
-        new_y = st.number_input("Y Coordinate", min_value=0, max_value=numpy_image.shape[0], value=0)
-        if st.button("Add Point"):
-            st.session_state[current_lm_key].append([new_x, new_y])
-            st.rerun()
-            
-    with col_rem:
-        st.write("Remove Landmark")
-        lm_to_remove = st.number_input("Landmark ID to remove", min_value=0, max_value=max(0, len(active_landmarks)-1), value=0)
-        if st.button("Remove Point") and active_landmarks:
-            st.session_state[current_lm_key].pop(lm_to_remove)
-            st.rerun()
+    # Calculate the dimensions of the new, smaller viewable window
+    new_w = w / zoom_factor
+    new_h = h / zoom_factor
+    
+    # Find the dead center of the original image
+    center_x = w / 2
+    center_y = h / 2
+    
+    # Restrict Plotly's X and Y axes to this new window, effectively zooming in
+    fig_orig.update_xaxes(range=[center_x - (new_w / 2), center_x + (new_w / 2)])
+    fig_orig.update_yaxes(range=[center_y - (new_h / 2), center_y + (new_h / 2)])
 
-# Render Plotly Preview using the ACTIVE (edited) landmarks
-fig = create_main_preview(numpy_image, active_landmarks, highlight_ids=None, preview_height=preview_height)
-st.plotly_chart(fig, use_container_width=True)
-
+# Render the Chart
+st.plotly_chart(fig_orig, width='stretch', height='content', key="preview")
 
 # --- Navigation ---
 col_prev, col_save, col_next = st.columns([1, 2, 1])
 
 with col_prev:
-    if st.button("⬅️ Previous") and st.session_state.image_idx > 0:
+    if st.button("⬅️ Previous", width='stretch') and st.session_state.image_idx > 0:
         st.session_state.image_idx -= 1
         st.rerun()
 
 with col_save:
     if st.button("💾 Save Settings to JSON", width='stretch'):
         # Package everything together using the dynamically assigned sidebar variables
-        output_data = {
-            "filename": current_image_name,
-            "emotion": main_emotion,
-            "intensity": intensity,
-            "action_units": action_units
-        }
+        if landmarks is None:
+            output_data = {
+                "filename": current_image_name,
+                "emotion": main_emotion,
+                "intensity": intensity,
+                "action_units": action_units_upperface + action_units_eyes + action_units_lowerface + action_units_misc + action_units_head,
+                "landmarks": None
+            }
+        else:
+            output_data = {
+                "filename": current_image_name,
+                "emotion": main_emotion,
+                "intensity": intensity,
+                "action_units": action_units_upperface + action_units_eyes + action_units_lowerface + action_units_misc + action_units_head,
+                "landmarks": landmarks
+            }
         
         save_path = os.path.join(image_dir, f"labels_{os.path.splitext(current_image_name)[0]}.json")
         with open(save_path, "w") as f:
@@ -232,6 +292,6 @@ with col_save:
         st.success(f"Annotation saved to `{save_path}`!")
 
 with col_next:
-    if st.button("Next ➡️") and st.session_state.image_idx < len(images) - 1:
+    if st.button("Next ➡️", width='stretch') and st.session_state.image_idx < len(images) - 1:
         st.session_state.image_idx += 1
         st.rerun()
