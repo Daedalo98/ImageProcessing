@@ -169,7 +169,7 @@ else:
         results_df = pd.DataFrame(results)
         st.dataframe(
             results_df.style.map(lambda v: 'color: #ff4b4b; font-weight: bold;' if v == 'Error' else 'color: #00cc66; font-weight: bold;', subset=['Status']), 
-            use_container_width=True
+            width='stretch'
         )
 
 st.markdown("---")

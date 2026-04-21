@@ -167,7 +167,7 @@ with st.sidebar:
         st.button(
             "Add Selected Transformations to Pipeline", 
             type="primary", 
-            use_container_width=True, 
+            width='stretch',
             on_click=process_and_clear_selections
         )
 
@@ -225,7 +225,7 @@ with st.sidebar:
                     help="Moves the image vertically. Positive values shift down, negative values shift up.")
             elif op == "rotate_image":
                 params['angle'] = st.number_input("Angle (degrees)", min_value=-360, max_value=360, value=0, step=5, key=f"rot_{step_id}",
-                    help="Rotates the image around its exact center. Positive values rotate counter-clockwise.")
+                    help="Rotates the image around its exact center. Positive values rotate clockwise.")
             elif op == "scale_image":
                 params['scale_factor'] = st.number_input("Scale Factor", min_value=0.1, max_value=10.0, value=1.0, step=0.1, key=f"scale_{step_id}",
                     help="Scales the image by the specified factor.")
@@ -363,9 +363,15 @@ with st.sidebar:
                 
             pipeline_config.append({'op': op, 'params': params})
 
-    # Batch Processing Trigger
+
+    # ==========================================
+    # BATCH PROCESSING TRIGGER
+    # ==========================================
     st.divider()
-    if st.button("🚀 Run Batch Process", type="primary", width='stretch'):
+    st.header("4. Run Batch Process")
+    
+    # --- Process 1: Loaded Images ---
+    if st.button("🚀 Process Loaded Images", type="primary", width='stretch'):
         if not uploaded_files:
             st.error("Please upload files first.")
         else:
@@ -378,8 +384,7 @@ with st.sidebar:
                 # Apply pipeline
                 for step in pipeline_config:
                     op, p = step['op'], step['params']
-                    if not op:
-                        continue
+                    if not op: continue
                     func = getattr(fn, op, None)
                     if func is not None:
                         img = func(img, **p)
@@ -390,13 +395,61 @@ with st.sidebar:
                 progress_bar.progress((idx + 1) / len(uploaded_files))
             
             # Save Log TXT
-            log_path = os.path.join(output_folder, "pipeline_log.txt")
+            log_path = os.path.join(output_folder, f"pipeline_log.txt")
             with open(log_path, "w") as f:
                 f.write("APPLIED TRANSFORMATIONS:\n")
                 for i, step in enumerate(pipeline_config):
                     f.write(f"{i+1}. {step['op']} - {step['params']}\n")
             
             st.success(f"Batch completed! Log saved to {log_path}")
+
+    st.markdown("<div style='text-align: center; margin: 10px 0;'><b>OR</b></div>", unsafe_allow_html=True)
+
+    # --- Process 2: Local Directory Images ---
+    input_folder = st.text_input("Target Local Folder Path", placeholder="e.g., C:/Images/Raw/")
+    
+    if st.button("📁 Process Target Folder", type="secondary", width='stretch'):
+        if not input_folder or not os.path.isdir(input_folder):
+            st.error("Please enter a valid local folder path.")
+        else:
+            os.makedirs(output_folder, exist_ok=True)
+            
+            # Scan directory for image files
+            valid_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.webp')
+            folder_files = [f for f in os.listdir(input_folder) if f.lower().endswith(valid_extensions)]
+            
+            if not folder_files:
+                st.warning("No valid images found in the specified folder.")
+            else:
+                progress_bar = st.progress(0)
+                
+                for idx, filename in enumerate(folder_files):
+                    file_path = os.path.join(input_folder, filename)
+                    # Use PIL to safely open the file from the path, then convert to array
+                    img = np.array(Image.open(file_path))
+                    
+                    # Apply pipeline
+                    for step in pipeline_config:
+                        op, p = step['op'], step['params']
+                        if not op: continue
+                        func = getattr(fn, op, None)
+                        if func is not None:
+                            img = func(img, **p)
+                    
+                    # Save
+                    save_path = os.path.join(output_folder, f"mod_{filename}")
+                    cv2.imwrite(save_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR) if len(img.shape)==3 else img)
+                    progress_bar.progress((idx + 1) / len(folder_files))
+                
+                # Save Log TXT
+                log_path = os.path.join(output_folder, "pipeline_log.txt")
+                with open(log_path, "w") as f:
+                    f.write(f"SOURCE FOLDER: {input_folder}\n")
+                    f.write("APPLIED TRANSFORMATIONS:\n")
+                    for i, step in enumerate(pipeline_config):
+                        f.write(f"{i+1}. {step['op']} - {step['params']}\n")
+                
+                st.success(f"Folder batch completed! Processed {len(folder_files)} images. Log saved to {log_path}")
 
 # --- MAIN LAYOUT (Side-by-Side View) ---
 if uploaded_files:

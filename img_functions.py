@@ -15,7 +15,7 @@ def translate_image(img, tx, ty):
 def rotate_image(img, angle):
     """Rotates around the center pixel."""
     h, w = img.shape[:2]
-    M = cv2.getRotationMatrix2D((w/2, h/2), angle, 1.0)
+    M = cv2.getRotationMatrix2D((w/2, h/2), -angle, 1.0)
     return cv2.warpAffine(img, M, (w, h))
 
 def resize_image(img, width, height, interpolation):
