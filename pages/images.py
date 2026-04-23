@@ -7,10 +7,12 @@ from PIL import Image
 import uuid
 import img_functions as fn
 import json
+import tempfile
 
 # ==========================================
 # STREAMLIT UI ARCHITECTURE
 # ==========================================
+preview_width, preview_height = None, None # Global variables to store dimensions of the first uploaded image for dynamic parameter limits
 
 st.set_page_config(page_title="Advanced Side-by-Side CV", layout="wide")
 
@@ -143,14 +145,27 @@ def get_idx(step_dict, param_key, options_list, default_index=0):
 # --- SIDEBAR: ALL CONTROLS ---
 with st.sidebar:
     st.header("1. Input & Output")
-    uploaded_files = st.file_uploader("Upload Images (Select multiple for batch)", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+    
+    # Define explicit tuples for categorization later
+    IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
+    VIDEO_EXTS = (".mp4", ".mov", ".avi")
+    
+    # Add video extensions to the uploader type parameter
+    uploaded_files = st.file_uploader(
+        "Upload Media (Select multiple for batch)", 
+        type=["jpg", "jpeg", "png", "bmp", "webp", "mp4", "mov", "avi"], 
+        accept_multiple_files=True
+    )
+
     output_folder = st.text_input("Output Path", value="./output_images")
 
     if uploaded_files:
-        st.success(f"Successfully loaded {len(uploaded_files)} image(s).")
+        st.success(f"Successfully loaded {len(uploaded_files)} image(s) or video(s).")
         preview_bytes = uploaded_files[0].getvalue()
-        with Image.open(io.BytesIO(preview_bytes)) as sample_image:
-            preview_width, preview_height = sample_image.size
+        # if uploaded file is an image
+        if uploaded_files[0].type.startswith("image/"):
+            with Image.open(io.BytesIO(preview_bytes)) as sample_image:
+                preview_width, preview_height = sample_image.size
     else:
         st.warning("Awaiting image uploads. Please select files to begin.")
     
@@ -445,39 +460,92 @@ with st.sidebar:
     # ==========================================
     # BATCH PROCESSING TRIGGER
     # ==========================================
+
     st.divider()
-    st.header("4. Run Batch Process")
+    st.header("4. Media Settings")
     
-    # --- Process 1: Loaded Images ---
-    if st.button("🚀 Process Loaded Images", type="primary", width='stretch'):
+    # Requirement 3: Filter for batch processing
+    media_filter = st.selectbox(
+        "Files to process in batch:",
+        ["Both Images and Videos", "Only Images", "Only Videos"],
+        help="Filters the files in the upload list or target directory."
+    )
+    
+    # Requirement 2: Video output format
+    video_output_mode = st.radio(
+        "Video Processing Output:",
+        [
+            "Output processed video file (.mp4)", 
+            "Save frames as individual images",
+            "Both (Video file AND individual frames)" # <--- ADD THIS LINE
+        ],
+        help="Choose how processed videos are saved to the output folder."
+    )
+
+    if st.button("🚀 Process Loaded Files", type="primary", width='stretch'):
         if not uploaded_files:
             st.error("Please upload files first.")
         else:
             os.makedirs(output_folder, exist_ok=True)
-            progress_bar = st.progress(0)
             
-            for idx, file in enumerate(uploaded_files):
-                img = np.array(Image.open(file))
+            # 1. Filter files based on user choice
+            files_to_process = []
+            for f in uploaded_files:
+                name_lower = f.name.lower()
+                is_vid = name_lower.endswith(VIDEO_EXTS)
+                is_img = name_lower.endswith(IMAGE_EXTS)
                 
-                # Apply pipeline
-                for step in pipeline_config:
-                    op, p = step['op'], step['params']
-                    if not op: continue
-                    func = getattr(fn, op, None)
-                    if func is not None:
-                        try:
-                            img = func(img, **p)
-                        except Exception as e:
-                            # Log the exact failure gracefully
-                            filename = file.name if hasattr(file, 'name') else f"Image {idx+1}"
-                            st.error(f"Failed to apply '{op}' on image '{filename}'. Error: {str(e)}")
-                            break # Optional: break out of the pipeline for this specific image if a step fails
-                            
-                # Save
-                save_path = os.path.join(output_folder, f"mod_{file.name}")
-                cv2.imwrite(save_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR) if len(img.shape)==3 else img)
-                progress_bar.progress((idx + 1) / len(uploaded_files))
-            
+                if media_filter == "Only Images" and is_img:
+                    files_to_process.append(f)
+                elif media_filter == "Only Videos" and is_vid:
+                    files_to_process.append(f)
+                elif media_filter == "Both Images and Videos" and (is_img or is_vid):
+                    files_to_process.append(f)
+                    
+            if not files_to_process:
+                st.warning("No files matched the selected media filter.")
+            else:
+                progress_bar = st.progress(0, text="Overall Batch Progress")
+                
+                # 2. Iterate through filtered list
+                for idx, file in enumerate(files_to_process):
+                    is_vid = file.name.lower().endswith(VIDEO_EXTS)
+                    
+                    if is_vid:
+                        # --- VIDEO LOGIC ---
+                        print(f"[LOG] Routing {file.name} to video processor.")
+                        tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+                        tfile.write(file.read())
+                        tfile.close()
+                        
+                        # Call our helper function
+                        fn.process_video_file(tfile.name, file.name, output_folder, pipeline_config, video_output_mode, fn)
+                        os.remove(tfile.name) # Clean up
+                    else:
+                        # --- IMAGE LOGIC ---
+                        print(f"[LOG] Routing {file.name} to image processor.")
+                        img = np.array(Image.open(file))
+
+                        # Apply pipeline
+                        for step in pipeline_config:
+                            op, p = step['op'], step['params']
+                            if not op: continue
+                            func = getattr(fn, op, None)
+                            if func is not None:
+                                try:
+                                    img = func(img, **p)
+                                except Exception as e:
+                                    # Log the exact failure gracefully
+                                    filename = file.name if hasattr(file, 'name') else f"Image {idx+1}"
+                                    st.error(f"Failed to apply '{op}' on image '{filename}'. Error: {str(e)}")
+                                    break # Optional: break out of the pipeline for this specific image if a step fails
+                                    
+                        # Save
+                        save_path = os.path.join(output_folder, f"mod_{file.name}")
+                        cv2.imwrite(save_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR) if len(img.shape)==3 else img)
+
+                    progress_bar.progress((idx + 1) / len(files_to_process), text=f"Overall Batch Progress: {idx + 1}/{len(files_to_process)}")
+
             # Save Log as JSON
             log_path = os.path.join(output_folder, "pipeline_config.json")
             try:
@@ -493,7 +561,6 @@ with st.sidebar:
     # --- Process 2: Local Directory Images ---
     input_folder = st.text_input("Target Local Folder Path", placeholder="e.g., C:/Images/Raw/")
     
-
     if st.button("📁 Process Target Folder", type="secondary", width='stretch'):
         if not input_folder:
             st.error("Hold on! The local folder path cannot be empty.")
@@ -547,16 +614,65 @@ with st.sidebar:
 st.header("Live Preview & Information")
 st.text("Apply transformations and see the results in real-time.")
 
-
 # Render Plotly Preview using the ACTIVE (edited) landmarks and the new toggle state
 show_coords_toggle = st.toggle("🔎 Enable Hover Coordinates (Slower rendering)", value=False)
 
 if uploaded_files:
-    # Use the first uploaded image for the live preview
     preview_file = uploaded_files[0]
-    preview_bytes = preview_file.getvalue()
-    pil_img = Image.open(io.BytesIO(preview_bytes))
-    original_img = np.array(pil_img)
+    file_name = preview_file.name.lower()
+    
+    # Check if the primary file is a video
+    is_video = file_name.endswith(VIDEO_EXTS)
+    
+    if is_video:
+        print(f"[LOG] Video detected for preview: {file_name}")
+        
+        preview_bytes = preview_file.getvalue() 
+        pil_img = None # We set this to None because a video frame isn't a traditional PIL file
+
+        # 1. Write the uploaded bytes to a temporary file so OpenCV can read it
+        tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+        
+        tfile.write(preview_bytes)
+        tfile.close() # Close so OpenCV can safely open it
+        
+        # 2. Open video and get total frame count
+        cap = cv2.VideoCapture(tfile.name)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        
+        if total_frames == 0:
+            st.error("Could not read video frames. The file might be corrupted.")
+            original_img = np.zeros((500, 500, 3), dtype=np.uint8) # Fallback blank image
+        else:
+            # 3. Ask user which frame to preview
+            st.info(f"📹 Video loaded. Total frames: {total_frames}")
+            selected_frame = st.slider("Select Frame for Live Preview", 0, total_frames - 1, 0)
+            
+            # 4. Seek to the selected frame and read it
+            cap.set(cv2.CAP_PROP_POS_FRAMES, selected_frame)
+            ret, frame = cap.read()
+            
+            if ret:
+                # OpenCV reads in BGR, Streamlit/PIL expects RGB
+                original_img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                print(f"[LOG] Successfully extracted frame {selected_frame}")
+            else:
+                st.error("Failed to read the selected frame.")
+                original_img = np.zeros((500, 500, 3), dtype=np.uint8)
+                
+        cap.release()
+        try:
+            os.remove(tfile.name) # Clean up temp file
+        except OSError:
+            pass
+
+    else:
+        # Existing Image Logic
+        print(f"[LOG] Image detected for preview: {file_name}")
+        preview_bytes = preview_file.getvalue()
+        pil_img = Image.open(io.BytesIO(preview_bytes))
+        original_img = np.array(pil_img)
+
 
     original_landmarks = fn.get_face_landmarks(original_img)
     if original_landmarks is None:

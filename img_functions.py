@@ -285,14 +285,27 @@ def get_image_stats(img_array, pil_image=None, file_bytes=None):
     stats['Entropy'] = f"{-sum(probs * np.log2(probs)):.2f}"
     stats['Histogram Data'] = counts # For rendering charts later
     
-    # 5. Encapsulation & Metadata (Only available for original PIL image)
-    if pil_image:
+    # 5. Encapsulation & Metadata 
+    # Use getattr to safely ensure it's a loaded file, not just an array converted to PIL
+    if pil_image and getattr(pil_image, 'format', None):
         stats['File Format'] = pil_image.format
         stats['Color Space'] = pil_image.mode
         stats['Weight'] = f"{len(file_bytes) / 1024:.2f} KB" if file_bytes else "Unknown"
-        exif_data = pil_image.getexif()
+        
+        # Safely check for EXIF data
+        exif_data = getattr(pil_image, 'getexif', lambda: None)()
         stats['EXIF'] = "Present" if exif_data else "None"
+        
+    elif file_bytes:
+        # VIDEO ROUTE: We have bytes (the uploaded video), but no valid PIL image.
+        stats['File Format'] = "Video Container"
+        stats['Color Space'] = "RGB" if is_color else "Grayscale"
+        # Since videos are large, we calculate Megabytes instead of Kilobytes
+        stats['Weight'] = f"{len(file_bytes) / (1024 * 1024):.2f} MB (Total Video Size)" 
+        stats['EXIF'] = "N/A"
+        
     else:
+        # PROCESSED PREVIEW ROUTE: No file bytes exist yet
         stats['File Format'] = "N/A (In-Memory Array)"
         stats['Color Space'] = "N/A"
         # Estimate weight by encoding to JPEG in memory
@@ -634,3 +647,102 @@ def load_emotions(EMOTIONS_FILE: str, DEFAULT_EMOTIONS: list) -> list:
         with open(EMOTIONS_FILE, "w") as f:
             json.dump(DEFAULT_EMOTIONS, f, indent=4)
             return json.load(f)
+        
+
+
+### --- video processing functions --- 
+
+def process_video_file(video_path, filename, output_dir, config, out_mode, fn):
+    """
+    Handles frame-by-frame processing of a video and handles output routing.
+    Includes dynamic resolution, channel formatting, and multi-format exporting.
+    """
+    print(f"[LOG] Starting video processing for: {filename}")
+    cap = cv2.VideoCapture(video_path)
+    
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    
+    # 1. READ & PROCESS THE FIRST FRAME ("THE GUINEA PIG")
+    ret, first_frame = cap.read()
+    if not ret:
+        print(f"[LOG] Error: Could not read {filename}.")
+        cap.release()
+        return
+        
+    img = cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB)
+    for step in config:
+        op, p = step['op'], step['params']
+        func = getattr(fn, op, None)
+        if func:
+            img = func(img, **p)
+            
+    img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR) if len(img.shape) == 3 else cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    new_h, new_w = img_bgr.shape[:2]
+    
+    # ---------------------------------------------------------
+    # 2. PARSE USER PREFERENCE AND INITIALIZE OUTPUTS
+    # ---------------------------------------------------------
+    # Determine what needs to be saved based on the radio button string
+    save_video = "video file" in out_mode.lower() or "both" in out_mode.lower()
+    save_frames = "frames" in out_mode.lower() or "both" in out_mode.lower()
+    
+    writer = None
+    frame_dir = None
+    
+    if save_video:
+        out_path = os.path.join(output_dir, f"mod_{filename}")
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v') 
+        writer = cv2.VideoWriter(out_path, fourcc, fps, (new_w, new_h))
+        print(f"[LOG] Initialized VideoWriter at {out_path} with NEW resolution {new_w}x{new_h}")
+        
+    if save_frames:
+        frame_dir = os.path.join(output_dir, f"frames_{filename}")
+        os.makedirs(frame_dir, exist_ok=True)
+        print(f"[LOG] Saving frames to directory: {frame_dir}")
+        
+    # Write the guinea pig frame (Frame 0) to whichever outputs are active
+    if writer is not None:
+        writer.write(img_bgr)
+    if frame_dir is not None:
+        cv2.imwrite(os.path.join(frame_dir, "frame_00000.jpg"), img_bgr)
+        
+    # ---------------------------------------------------------
+    # 3. LOOP THROUGH THE REST OF THE VIDEO
+    # ---------------------------------------------------------
+    frame_idx = 1
+    video_prog = st.progress(0, text=f"Processing Video: {filename}")
+    
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break 
+            
+        img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        for step in config:
+            op, p = step['op'], step['params']
+            func = getattr(fn, op, None)
+            if func:
+                img = func(img, **p)
+                
+        img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR) if len(img.shape) == 3 else cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        
+        current_h, current_w = img_bgr.shape[:2]
+        if writer is not None and (current_w != new_w or current_h != new_h):
+            img_bgr = cv2.resize(img_bgr, (new_w, new_h))
+        
+        # --- NEW ROUTING LOGIC ---
+        # Instead of if/else, we check each independently so both can run
+        if writer is not None:
+            writer.write(img_bgr)
+        if frame_dir is not None:
+            cv2.imwrite(os.path.join(frame_dir, f"frame_{frame_idx:05d}.jpg"), img_bgr)
+            
+        frame_idx += 1
+        if frame_idx % 10 == 0 or frame_idx == total_frames:
+            video_prog.progress(min(frame_idx / max(1, total_frames), 1.0), text=f"Processing Video: {filename} (Frame {frame_idx}/{total_frames})")
+            
+    cap.release()
+    if writer:
+        writer.release()
+    print(f"[LOG] Finished processing video: {filename}")

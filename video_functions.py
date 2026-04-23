@@ -134,7 +134,7 @@ def load_spreadsheet(file_bytes, file_name, header_row=1):
         sheets = pd.read_excel(file_like_object, sheet_name=None, header=pd_header)
         
         common_cols = None
-        for sheet_name, df in sheets.items():
+        for _, df in sheets.items():
             cols = set(df.columns)
             if common_cols is None:
                 common_cols = cols
