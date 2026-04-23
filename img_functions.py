@@ -4,6 +4,8 @@ from scipy.fftpack import fft2, fftshift
 import pywt
 import math
 from PIL import Image
+import uuid
+
 
 # --- Geometric ---
 def translate_image(img, tx, ty):
@@ -536,6 +538,34 @@ def align_face(img, id1, id2, t1_x, t1_y, t2_x, t2_y):
     return align_face_by_two_points(img, landmarks, id1, id2, (t1_x, t1_y), (t2_x, t2_y))
 
 
+def load_pipeline_from_json(uploaded_json):
+    """Reads a JSON file and populates the transform pipeline."""
+    try:
+        # Parse the JSON file
+        loaded_data = json.load(uploaded_json)
+        
+        # Clear the current pipeline
+        st.session_state.transform_pipeline = []
+        
+        # Reconstruct the pipeline with fresh UUIDs
+        for step in loaded_data:
+            if 'op' in step:
+                # Generate a new ID for the UI widgets
+                new_id = str(uuid.uuid4())
+                
+                # Add to the pipeline
+                st.session_state.transform_pipeline.append({
+                    'id': new_id, 
+                    'op': step['op'],
+                    # We also store the loaded parameters so we can use them as defaults later
+                    'loaded_params': step.get('params', {}) 
+                })
+                
+        st.toast("✅ Pipeline loaded successfully!", icon="📂")
+    except json.JSONDecodeError:
+        st.error("Failed to read the file. Ensure it is a valid JSON pipeline configuration.")
+    except Exception as e:
+        st.error(f"An unexpected error occurred while loading the pipeline: {e}")
 
 
 def create_main_preview(img: np.ndarray, landmarks: list, highlight_ids: list, show_coords: bool):
