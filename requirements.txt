@@ -10,5 +10,4 @@ plotly
 pandas 
 moviepy 
 openpyxl
-opencv-python
 imageio-ffmpeg

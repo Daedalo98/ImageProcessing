@@ -1,0 +1,10 @@
+services:
+  cv-app:
+    build: .
+    container_name: cv-app
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./output_images:/app/output_images
+      - ./list_of_emotions.json:/app/list_of_emotions.json
+    restart: unless-stopped

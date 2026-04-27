@@ -1,0 +1,11 @@
+.git
+.gitignore
+.venv
+__pycache__
+output_images/
+*.task
+*.env
+.dockerignore
+Dockerfile
+docker-compose.yml
+.github/

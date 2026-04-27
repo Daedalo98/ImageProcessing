@@ -1,97 +1,111 @@
-# CV App
+# 📘 CV App: Computer Vision Operations Hub
 
-A Streamlit-based computer vision application for video clipping, image/video transformation pipelines, and emotion/landmark labeling.
+Welcome to **CV App**, a comprehensive Streamlit-based computer vision application designed to simplify and accelerate your media-processing workflows. Whether you need to bulk-clip videos, experiment with complex image transformation pipelines, or carefully label datasets for machine learning, this hub provides a user-friendly visual interface.
 
-## Overview
+---
 
-This project provides three main application modules:
+## ✨ Core Modules
 
-- **Videos Clipper**: Batch-clip videos using a spreadsheet-based workflow with start/end times, labels, and output mode configuration.
-- **Transformations**: Build and run reusable image/video transformation pipelines with geometric, color, filtering, noise, and face-aware operations.
-- **Labels**: Annotate images and videos with emotion labels, intensity, secondary emotions, facial action units, and save structured JSON output.
+This application is divided into three primary modules, accessible via the sidebar navigation:
 
-The app is designed to support dataset preparation, augmentation, annotation, and clip extraction for computer vision experiments.
+### 🎬 Videos Clipper
+A bulk-processing engine to slice video datasets accurately using a spreadsheet.
+- **Spreadsheet Driven:** Upload an Excel (`.xlsx`, `.xls`) or `.csv` file containing the clip metadata.
+- **Dynamic Field Mapping:** Easily map your spreadsheet columns to required parameters (filename, start/end times, labels).
+- **Intelligent Pre-flight:** The app validates video existence, checks for duration errors, and validates time bounds before making a single cut.
+- **Flexible Exports:** Choose to group clips by source file, auto-create subfolders, or perfectly replicate your original directory tree.
 
-## Main Features
+### 🖼️ Transformations
+A powerful, step-by-step pipeline builder to apply various visual operations to images and videos.
+- **Batch Capabilities:** Upload multiple files at once.
+- **Pipeline Builder:** Stack transformations logically. You can apply geometric shifts, adjust colors, apply filters (like Gaussian Blur or Canny Edge Detection), simulate noise, and more.
+- **Face-Aware Tools:** Perform advanced operations like face-cropping and facial alignment using MediaPipe landmarks.
+- **Save & Load:** Export your exact transformation pipeline as a JSON file to easily reload and re-apply it to future data.
 
-### Videos Clipper
+### 🏷️ Labels
+A dedicated annotation environment to tag images and videos for emotion and landmark datasets.
+- **Emotion Tagging:** Assign main emotions, secondary emotions, and intensity levels. 
+- **Action Units:** Log highly specific facial action units (e.g., inner brow raiser, lip corner puller) categorized by facial region.
+- **Custom Persistence:** Add new custom emotions directly in the app, which are permanently saved to `list_of_emotions.json`.
+- **Output:** Saves a clean, structured JSON file next to your media files containing all entered annotations.
 
-- Upload a spreadsheet (`CSV`, `XLSX`, `XLS`) with clip metadata.
-- Select the source video folder and choose output storage mode.
-- Map spreadsheet columns to video filename, start time, end time or duration, main label, and secondary labels.
-- Compile a clip schedule and preview dictionary structure.
-- Pre-flight validation of video files, durations, and timing boundaries.
-- Automatically create output folders, group clips by source file, or replicate original folder trees.
-- Process clips using FFMPEG and review detailed progress logs.
+---
 
-### Transformations
+## 🚀 How to Run the App (Non-Tech Tutorial)
 
-- Upload multiple images or videos for batch transformation.
-- Configure an output folder and optionally load a saved pipeline JSON.
-- Select information display categories such as dimensional, color, photographic, structural, and metadata.
-- Build transformation pipelines from categories including:
-  - Geometric transforms: translate, rotate, scale, resize, shear, square, flip, crop.
-  - Color/photo transforms: brightness/contrast, gamma, histogram equalization, thresholding, posterization, inversion.
-  - Filtering transforms: Gaussian blur, median blur, unsharp mask, Canny edge detection, morphology.
-  - Frequency/noise transforms: DWT, Gaussian noise, salt-and-pepper noise, JPEG artifact simulation.
-  - Face transforms: advanced face cropping and face alignment.
-- Manage pipeline order, remove steps, and configure per-step parameters.
-- Export processed media with flexible video/frame output options.
+The easiest and safest way to use this app is through **Docker**. Docker acts like a virtual box that contains everything the app needs to run perfectly (libraries, dependencies, background engines) so you don't have to install complicated programming tools on your own computer.
 
-### Labels
+### Method 1: Using Docker (Recommended)
 
-- Filter media by images, videos, or both.
-- Initialize and validate dataset directories.
-- Enable random file order for annotation workflows.
-- Choose a main emotion, secondary emotions, and intensity range.
-- Add custom emotions that persist across sessions via `list_of_emotions.json`.
-- Select facial action units grouped by upper face, eyes/eyelids, lower face, miscellaneous, and head orientation.
-- Display optional landmark overlays and coordinate hover details.
-- Add annotator notes and save annotations as JSON per file.
+**Step 1: Install Docker Desktop**
+- Go to the [Docker Desktop download page](https://www.docker.com/products/docker-desktop/).
+- Download and install the version for your computer (Windows, Mac, or Linux).
+- Once installed, open the Docker Desktop application and wait for it to show that the "Engine is running".
 
-## Requirements
+**Step 2: Get the Project Folder**
+- Download or clone this project folder to your computer.
+- Open your computer's Terminal (Mac/Linux) or Command Prompt / PowerShell (Windows).
+- Navigate into the downloaded folder. For example:
+  ```bash
+  cd path/to/your/cv_app
+  ```
 
-Create virtual environment to protect conflicts with your PC's main environment:
-```bash
-python3 -m venv .venv
-source ./.venv/bin/activate
-```
+**Step 3: Start the App**
+- In your terminal window, type the following command exactly and press Enter:
+  ```bash
+  docker compose up --build
+  ```
+- *Note: The very first time you do this, it may take 5-10 minutes to download all the safe virtual packages and the AI models. Subsequent launches will take only seconds.*
 
-Install the required Python packages using the included `requirements.txt`.
+**Step 4: Open the App in your Browser**
+- Once the terminal stops printing new lines and you see a message saying "Network cv_app_default  Created", open your favorite web browser (Chrome, Firefox, Safari).
+- Go to this address: **[http://localhost:8501](http://localhost:8501)**
+- You are now inside the app!
 
-```bash
-pip install -r requirements.txt
-```
+**Step 5: How to Stop the App**
+- When you are done using the app, go back to your Terminal window where it is running.
+- Press `Ctrl + C` on your keyboard.
+- It will safely shut down the virtual box.
 
-## Running the App
+> **💡 Note on Files:** Anything you generate in the app (like chopped videos or formatted images) will safely save to the `output_images` folder right inside your project directory on your normal computer.
 
-From the project root, launch the Streamlit app:
+---
 
-```bash
-streamlit run main.py
-```
+### Method 2: Manual Python Installation (For Developers)
 
-Then open the URL printed in the terminal to access the interface.
+If you are a developer and wish to run the code directly on your host machine:
 
-## Project Structure
+1. Create a virtual environment to protect your global Python packages:
+   ```bash
+   python3 -m venv .venv
+   source ./.venv/bin/activate  # On Windows use: .\.venv\Scripts\activate
+   ```
+2. Install the required Python packages:
+   ```bash
+   pip install -r requirements.txt
+   ```
+   *(Note: The provided `requirements.txt` uses `opencv-python-headless` designed for server/docker use. If you need UI elements from OpenCV on your local machine, you may swap it for `opencv-python`.)*
+3. Launch the Streamlit server:
+   ```bash
+   streamlit run main.py
+   ```
 
-- `main.py` — entry point and documentation hub for the app.
-- `pages/videos_clipper.py` — video clipping and spreadsheet-driven batch processing.
-- `pages/transformations.py` — transformation pipeline builder and processor.
-- `pages/labels.py` — emotion and landmark annotation interface.
-- `img_functions.py` — helper functions for image processing and landmark rendering.
-- `video_functions.py` — helper functions for loading spreadsheets and processing video clips.
-- `list_of_emotions.json` — persisted emotion list used by the labeling module.
-- `requirements.txt` — package dependencies.
+---
 
-## Notes
+## 📂 Project Structure
 
-- The app uses Streamlit for the UI and relies on OpenCV, MediaPipe, and PIL for media processing.
-- Video clipping uses `imageio-ffmpeg` to invoke FFMPEG for reliable segment extraction.
-- Excel spreadsheets are supported through `openpyxl` and `pandas`.
+- `main.py`: Entry point and documentation hub for the app.
+- `pages/`: Contains the individual module screens (`videos_clipper.py`, `transformations.py`, `labels.py`).
+- `img_functions.py`: Holds the core mathematical, OpenCV, and MediaPipe logic for image operations.
+- `video_functions.py`: Holds logic for decoding spreadsheets and manipulating FFMPEG streams.
+- `Dockerfile` & `docker-compose.yml`: Instructions for building the virtual container environment.
+- `list_of_emotions.json`: A dynamic list of tags used for the Labels module.
+- `output_images/`: The default directory linked to your local machine for retrieving processed files.
 
-## Troubleshooting
+---
 
-- If Streamlit fails to start, verify the virtual environment is active and `requirements.txt` is installed.
-- For missing media files, confirm the source folder path and allowed extensions are correct.
-- If spreadsheet columns fail to map, ensure header row selection matches the actual sheet layout.
+## 🛠️ Troubleshooting
+
+- **App won't load on localhost:8501:** Ensure Docker Desktop is actually running in the background before you type the start command.
+- **"Port is already allocated" error:** Another app is using port 8501. Stop that app first, or change the port mapping in `docker-compose.yml`.
+- **Can't find processed files:** When using Docker, ensure you selected `output_images` (or subfolders inside it) as your target destination in the app, as this is the folder bridged back to your actual computer.
