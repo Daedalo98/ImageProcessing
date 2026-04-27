@@ -8,6 +8,7 @@ import uuid
 import img_functions as fn
 import json
 import tempfile
+from pathlib import Path
 
 # ==========================================
 # STREAMLIT UI ARCHITECTURE
@@ -157,7 +158,7 @@ with st.sidebar:
         accept_multiple_files=True
     )
 
-    output_folder = st.text_input("Output Path", value="./output_images")
+    output_folder = st.text_input("Output Path", value="./outputs", help="Directory where processed files will be saved. Will be created if it doesn't exist.")
 
     if uploaded_files:
         st.success(f"Successfully loaded {len(uploaded_files)} image(s) or video(s).")
@@ -559,56 +560,94 @@ with st.sidebar:
     st.markdown("<div style='text-align: center; margin: 10px 0;'><b>OR</b></div>", unsafe_allow_html=True)
 
     # --- Process 2: Local Directory Images ---
-    input_folder = st.text_input("Target Local Folder Path", placeholder="e.g., C:/Images/Raw/")
+    input_folder = st.text_input("Target Local Folder Path", placeholder="e.g., C:/Files/", help="Enter the path to a local folder containing files to process.")
     
-    if st.button("📁 Process Target Folder", type="secondary", width='stretch'):
-        if not input_folder:
-            st.error("Hold on! The local folder path cannot be empty.")
-        elif not os.path.isdir(input_folder):
-            st.error(f"Directory not found: '{input_folder}'. Please check the path.")
+    if st.button("🚀 Process Local Folder", type="primary", width='stretch'):
+        input_path = Path(input_folder)
+        
+        if not input_folder or not input_path.is_dir():
+            st.error("Please provide a valid input folder path.")
         else:
             os.makedirs(output_folder, exist_ok=True)
             
-            # Scan directory for image files
-            valid_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.webp')
-            folder_files = [f for f in os.listdir(input_folder) if f.lower().endswith(valid_extensions)]
+            # 1. Filter files based on user choice across ALL subfolders
+            files_to_process = []
             
-            if not folder_files:
-                st.warning(f"Searched '{input_folder}', but couldn't find any valid images (.jpg, .png, etc).")
+            # .rglob('*') recursively searches all files and folders
+            for file_path in input_path.rglob('*'):
+                if file_path.is_file():
+                    name_lower = file_path.name.lower()
+                    is_vid = name_lower.endswith(VIDEO_EXTS)
+                    is_img = name_lower.endswith(IMAGE_EXTS)
+                    
+                    if media_filter == "Only Images" and is_img:
+                        files_to_process.append(file_path)
+                    elif media_filter == "Only Videos" and is_vid:
+                        files_to_process.append(file_path)
+                    elif media_filter == "Both Images and Videos" and (is_img or is_vid):
+                        files_to_process.append(file_path)
+                        
+            if not files_to_process:
+                st.warning("No files matched the selected media filter in the given folder or its subfolders.")
             else:
-                st.success(f"Found {len(folder_files)} images. Starting batch...")
-            
-                progress_bar = st.progress(0)
-                for idx, filename in enumerate(folder_files):
-                    file_path = os.path.join(input_folder, filename)
-                    # Use PIL to safely open the file from the path, then convert to array
-                    img = np.array(Image.open(file_path))
-                    
-                    # Apply pipeline
-                    for step in pipeline_config:
-                        op, p = step['op'], step['params']
-                        if not op: continue
-                        func = getattr(fn, op, None)
-                        if func is not None:
-                            img = func(img, **p)
-                    
-                    # Save
-                    save_path = os.path.join(output_folder, f"mod_{filename}")
-                    cv2.imwrite(save_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR) if len(img.shape)==3 else img)
-                    progress_bar.progress((idx + 1) / len(folder_files))
+                progress_bar = st.progress(0, text="Overall Batch Progress")
                 
-                # Save Log as JSON
-                log_path = os.path.join(output_folder, "pipeline_config.json")
-                try:
-                    with open(log_path, "w") as f:
-                        # pipeline_config is already a list of dictionaries!
-                        json.dump(pipeline_config, f, indent=4)
-                    st.success(f"Batch completed! Pipeline configuration saved to {log_path}")
-                except Exception as e:
-                    st.error(f"Batch completed, but failed to save JSON config. Error: {e}")
+                # 2. Iterate through filtered list
+                for idx, file_path in enumerate(files_to_process):
+                    is_vid = file_path.name.lower().endswith(VIDEO_EXTS)
                     
-                st.success(f"Folder batch completed! Processed {len(folder_files)} images. Log saved to {log_path}")
+                    # Determine relative path to recreate the subfolder structure in the output directory
+                    rel_path = file_path.relative_to(input_path)
+                    file_output_dir = Path(output_folder) / rel_path.parent
+                    file_output_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    if is_vid:
+                        # --- VIDEO LOGIC ---
+                        print(f"[LOG] Routing {file_path.name} to video processor.")
+                        
+                        # No temporary file needed! We just pass the local file path directly.
+                        fn.process_video_file(
+                            str(file_path), 
+                            file_path.name, 
+                            str(file_output_dir), 
+                            pipeline_config, 
+                            video_output_mode, 
+                            fn
+                        )
+                    else:
+                        # --- IMAGE LOGIC ---
+                        print(f"[LOG] Routing {file_path.name} to image processor.")
+                        img = np.array(Image.open(file_path))
 
+                        # Apply pipeline
+                        for step in pipeline_config:
+                            op, p = step['op'], step['params']
+                            if not op: continue
+                            func = getattr(fn, op, None)
+                            if func is not None:
+                                try:
+                                    img = func(img, **p)
+                                except Exception as e:
+                                    # Log the exact failure gracefully
+                                    st.error(f"Failed to apply '{op}' on image '{file_path.name}'. Error: {str(e)}")
+                                    break 
+                                    
+                        # Save
+                        save_path = file_output_dir / f"mod_{file_path.name}"
+                        cv2.imwrite(str(save_path), cv2.cvtColor(img, cv2.COLOR_RGB2BGR) if len(img.shape)==3 else img)
+
+                    progress_bar.progress((idx + 1) / len(files_to_process), text=f"Overall Batch Progress: {idx + 1}/{len(files_to_process)}")
+
+            # Save Log as JSON
+            log_path = os.path.join(output_folder, "pipeline_config.json")
+            try:
+                with open(log_path, "w") as f:
+                    json.dump(pipeline_config, f, indent=4)
+                st.success(f"Batch completed! Pipeline configuration saved to {log_path}")
+            except Exception as e:
+                st.error(f"Batch completed, but failed to save JSON config. Error: {e}")
+
+    st.markdown("<div style='text-align: center; margin: 10px 0;'><b>OR</b></div>", unsafe_allow_html=True)
 # --- MAIN LAYOUT (Side-by-Side View) ---
 
 st.header("Live Preview & Information")
