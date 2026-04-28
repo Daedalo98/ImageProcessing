@@ -30,5 +30,8 @@ COPY . .
 # Expose the Streamlit port
 EXPOSE 8501
 
+# Create output directory with appropriate permissions
+RUN mkdir -p /app/output && chmod 777 /app/output
+
 # Command to run the application
 CMD ["streamlit", "run", "main.py", "--server.port=8501", "--server.address=0.0.0.0"]

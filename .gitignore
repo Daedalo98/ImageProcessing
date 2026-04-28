@@ -141,3 +141,8 @@ Thumbs.db
 output_images/
 outputs/
 inputs/
+
+./inputs
+./outputs
+
+/home/daedalo98/projects/cv_app/outputs
