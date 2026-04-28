@@ -9,3 +9,5 @@ output_images/
 Dockerfile
 docker-compose.yml
 .github/
+./input_files/
+./outputs
