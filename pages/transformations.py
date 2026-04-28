@@ -158,7 +158,7 @@ with st.sidebar:
         accept_multiple_files=True
     )
 
-    output_folder = st.text_input("Output Path", value="./outputs", help="Directory where processed files will be saved. Will be created if it doesn't exist.")
+    output_folder = st.text_input("Output Path", value="./outputs", help="Directory where processed files will be saved relative to the project folder (e.g., ./outputs, ./results). Will be created if it doesn't exist.")
 
     if uploaded_files:
         st.success(f"Successfully loaded {len(uploaded_files)} image(s) or video(s).")
@@ -560,7 +560,7 @@ with st.sidebar:
     st.markdown("<div style='text-align: center; margin: 10px 0;'><b>OR</b></div>", unsafe_allow_html=True)
 
     # --- Process 2: Local Directory Images ---
-    input_folder = st.text_input("Target Local Folder Path", placeholder="e.g., C:/Files/", help="Enter the path to a local folder containing files to process.")
+    input_folder = st.text_input("Target Local Folder Path", value="./input_files", help="Enter the path to a local folder containing files to process.")
     
     if st.button("🚀 Process Local Folder", type="primary", width='stretch'):
         input_path = Path(input_folder)

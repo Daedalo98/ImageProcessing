@@ -34,14 +34,14 @@ out_mode = st.radio(
 
 col1, col2 = st.columns(2)
 with col1:
-    source_folder = st.text_input("Source Video Folder Path", placeholder="/path/to/source/videos")
+    source_folder = st.text_input("Source Video Folder Path", placeholder="./source_videos", help="Enter a folder path relative to the project folder (e.g., ./source_videos, ./videos, or ./data/clips). Move your video files into this folder before running.")
 
 with col2:
     if out_mode.startswith("A"):
         output_folder = None
         st.info("ℹ️ Output path not required for Mode A.")
     else:
-        output_folder = st.text_input("Output Folder Path (Required)", placeholder="/path/to/save/clips")
+        output_folder = st.text_input("Output Folder Path (Required)", placeholder="./output_clips", help="Output clips will be saved relative to the project folder (e.g., ./output_clips, ./results). The folder will be created automatically if it doesn't exist.")
 
 uploaded_file = st.file_uploader("Upload Spreadsheet (CSV, XLSX, XLS)", type=["csv", "xlsx", "xls"])
 

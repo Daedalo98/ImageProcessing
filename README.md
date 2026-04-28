@@ -50,24 +50,58 @@ The easiest and safest way to use this app is through **Docker**. Docker acts li
   cd path/to/your/cv_app
   ```
 
-**Step 3: Start the App**
+**Step 3: Prepare Your Files**
+The app works with files stored inside the project folder. Here's how to set it up:
+
+- **For Videos Clipper:**
+  - Create a new folder inside the project called `source_videos` and move all your video files there.
+  - When running the app, use `./source_videos` as the source folder path.
+  - For output, create a folder like `output_clips` and use `./output_clips` as the output path.
+
+- **For Transformations:**
+  - Upload files directly through the app's file uploader, or place them in a folder like `input_images` inside the project.
+  - Processed files will be saved to a folder you specify (default: `./outputs`).
+
+- **For Labels:**
+  - Create a folder like `dataset_images` inside the project and organize your media files there.
+  - Use `./dataset_images` as the dataset path when labeling.
+
+> **Example folder structure:**
+> ```
+> cv_app/
+> ├── source_videos/         (your video files go here)
+> ├── output_clips/          (clipped videos will appear here)
+> ├── input_images/          (images for transformation)
+> ├── outputs/               (transformed files)
+> ├── dataset_images/        (images to label)
+> ├── main.py
+> ├── docker-compose.yml
+> └── ... (other files)
+> ```
+
+**Step 4: Start the App**
 - In your terminal window, type the following command exactly and press Enter:
   ```bash
   docker compose up --build
   ```
 - *Note: The very first time you do this, it may take 5-10 minutes to download all the safe virtual packages and the AI models. Subsequent launches will take only seconds.*
 
-**Step 4: Open the App in your Browser**
-- Once the terminal stops printing new lines and you see a message saying "Network cv_app_default  Created", open your favorite web browser (Chrome, Firefox, Safari).
+**Step 5: Open the App in your Browser**
+- Once the terminal stops printing new lines and you see a message saying the app is running, open your favorite web browser (Chrome, Firefox, Safari).
 - Go to this address: **[http://localhost:8501](http://localhost:8501)**
 - You are now inside the app!
 
-**Step 5: How to Stop the App**
+**Step 6: Using the App**
+- When the app asks for folder paths, use relative paths starting with `./` (e.g., `./source_videos`, `./outputs`).
+- The app can read and write files inside the project folder only.
+- All processed files will be saved inside the project folder, so they're easy to access on your computer.
+
+**Step 7: How to Stop the App**
 - When you are done using the app, go back to your Terminal window where it is running.
 - Press `Ctrl + C` on your keyboard.
 - It will safely shut down the virtual box.
 
-> **💡 Note on Files:** Anything you generate in the app (like chopped videos or formatted images) will safely save to the `output_images` folder right inside your project directory on your normal computer.
+> **💡 Note on Files:** All file operations are contained within the project directory. Move your files into the project folder before using them, and retrieve your processed files from inside the project folder after processing.
 
 ---
 

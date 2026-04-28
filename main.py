@@ -9,8 +9,13 @@ PAGE_TUTORIALS = {
 - Serve as the bulk video clipper and batch processing hub.
 - Generate clips using a spreadsheet, source folder, and FFMPEG-backed workflow.
 
+**Setup:**
+1. Create a folder inside the project directory (e.g., `source_videos`) and move your video files there.
+2. Create another folder for outputs (e.g., `output_clips`).
+3. Use the relative paths when configuring the app (e.g., `./source_videos`, `./output_clips`).
+
 **Key Features:**
-- Source and output path configuration.
+- Source and output path configuration (relative to project folder).
 - Spreadsheet upload for CSV / XLSX / XLS.
 - Header row selection and dynamic column mapping.
 - Column mapping for video filename, start time, end time or duration, main label, and secondary labels.
@@ -31,6 +36,11 @@ PAGE_TUTORIALS = {
 **Purpose:**
 - Build advanced image/video processing pipelines with step-by-step controls.
 - Apply geometric, color, filtering, frequency, and face-based transformations.
+
+**Setup:**
+1. Upload files directly through the app interface, or place them in folders within the project directory.
+2. Processed files will be saved to the output folder you specify (default: `./outputs`).
+3. Use relative paths when configuring the app (e.g., `./outputs`, `./results`).
 
 **Key Features:**
 - Multiple image/video uploads for batch processing.
@@ -54,6 +64,10 @@ PAGE_TUTORIALS = {
 **Purpose:**
 - Annotate images and videos with emotions, intensities, secondary labels, and facial action units.
 - Save structured annotation output per file.
+
+**Setup:**
+1. Create a folder inside the project directory (e.g., `dataset_images`) and organize your files.
+2. Use the folder path when selecting your dataset (e.g., `./dataset_images`).
 
 **Key Features:**
 - Media type filtering and directory path selection.
