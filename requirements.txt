@@ -1,3 +1,5 @@
+--upgrade pip
+
 streamlit
 streamlit-drawable-canvas
 opencv-python-headless
@@ -11,3 +13,6 @@ pandas
 moviepy 
 openpyxl
 imageio-ffmpeg
+hilbertcurve
+torch
+torchvision

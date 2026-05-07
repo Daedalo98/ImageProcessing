@@ -181,7 +181,7 @@ with st.sidebar:
     
     if uploaded_pipeline is not None:
         # We use a button to confirm the load, preventing accidental overwrites
-        if st.button("📂 Apply Uploaded Pipeline", use_container_width=True):
+        if st.button("📂 Apply Uploaded Pipeline", width='stretch'):
             fn.load_pipeline_from_json(uploaded_pipeline)
             st.rerun() # Refresh the UI to show the newly loaded steps
     
