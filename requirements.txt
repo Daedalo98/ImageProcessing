@@ -11,9 +11,6 @@ pandas
 moviepy 
 openpyxl
 imageio-ffmpeg
-hilbertcurve
-torch
-torchvision
 folium
 streamlit-folium
 pyproj
