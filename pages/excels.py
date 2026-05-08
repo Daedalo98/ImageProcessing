@@ -4,6 +4,10 @@ import plotly.graph_objects as go
 
 import folium # Maps core library
 from streamlit_folium import st_folium # Streamlit wrapper for Folium
+from folium.plugins import MarkerCluster, HeatMap
+
+import pyproj
+from pyproj import Transformer
 
 # --- THE FIX: Hex to RGBA Converter ---
 def hex_to_rgba(hex_code, opacity):
@@ -15,6 +19,48 @@ def hex_to_rgba(hex_code, opacity):
         b = int(hex_code[4:6], 16)
         return f"rgba({r},{g},{b},{opacity})"
     return hex_code # Fallback
+
+def fix_coords(row):
+    lat_s = str(row[config["lat_col"]]).strip()
+    lon_s = str(row[config["lon_col"]]).strip()
+    
+    # 1. Clean obvious thousands separators
+    if lat_s.count(',') > 1: lat_s = lat_s.replace(',', '')
+    if lon_s.count(',') > 1: lon_s = lon_s.replace(',', '')
+    if lat_s.count('.') > 1: lat_s = lat_s.replace('.', '')
+    if lon_s.count('.') > 1: lon_s = lon_s.replace('.', '')
+
+    try:
+        # 2. Convert standard European comma to dot, then to float
+        lat_f = float(lat_s.replace(',', '.'))
+        lon_f = float(lon_s.replace(',', '.'))
+    except ValueError:
+        return pd.Series([None, None])
+
+    # 3. Fix Mangled Eastings (e.g., 794.901 read as decimal)
+    if 180 < lon_f < 1000:
+        lon_f = lon_f * 1000
+
+    # ==========================================
+    # --- NEW: THE INTEGERIZED DEGREE FIX ---
+    # ==========================================
+    # If the user DID NOT check the "Projected Coordinates" box, 
+    # but the number is massive, it is multiplied by 100,000!
+    if lat_f > 90.0 and not config.get("is_projected"):
+        # Check if dividing by 100,000 puts it in valid GPS range
+        if -90.0 <= (lat_f / 100000.0) <= 90.0:
+            lat_f = lat_f / 100000.0
+            lon_f = lon_f / 100000.0
+
+    # 4. Auto-Transformation (Meters to Degrees)
+    # ONLY happens if the user explicitly checks the EPSG box in the UI
+    if config.get("is_projected") and config.get("epsg_code"):
+        try:
+            lon_f, lat_f = transformer.transform(lon_f, lat_f)
+        except:
+            pass
+
+    return pd.Series([lat_f, lon_f])
 
 # --- Page Config ---
 st.set_page_config(page_title="Ultra-Explorer Pro", layout="wide")
@@ -59,7 +105,7 @@ if uploaded_files:
             try:
                 # Robust CSV detection
                 if file.name.endswith('.csv'):
-                    temp_df = pd.read_csv(file, sep=None, engine='python', on_bad_lines='warn')
+                    temp_df = pd.read_csv(file, sep=';', engine='python', on_bad_lines='warn')
                 else:
                     temp_df = pd.read_excel(file)
 
@@ -204,7 +250,15 @@ if uploaded_files:
                         config["lon_col"] = st.selectbox("Longitude Column", local_df.columns, index=list(local_df.columns).index(config.get("lon_col", local_df.columns[0])), key=f"lon_{fname}")
                         
                         # 2. Sampling Filter
-                        config["max_samples"] = st.number_input("Max Points to Render", min_value=10, max_value=20000, value=config.get("max_samples", 1000), step=100, help="High numbers may crash the browser.", key=f"samp_{fname}")
+                        config["max_samples"] = st.number_input("Max Points to Render", min_value=1, max_value=20000, value=config.get("max_samples", 1000), step=10, help="High numbers may crash the browser.", key=f"samp_{fname}")
+
+                        config["map_render_mode"] = st.selectbox(
+                            "Render Mode", 
+                            ["Scatter (Individual)", "Marker Clusters", "Heatmap"], 
+                            index=1, # Default to Clusters for best balance
+                            key=f"rmode_{fname}",
+                            help="Clusters: Groups markers for performance. Heatmap: Shows density hotspots."
+                        )
 
                     with mc2:
                         # 3. Time Interval Filter
@@ -399,54 +453,79 @@ if uploaded_files:
 
     st.plotly_chart(fig, width='stretch')
 
-
-
     # ==========================================
-    # --- GLOBAL MAP RENDERER ---
+    # --- HYBRID GLOBAL MAP RENDERER ---
     # ==========================================
-    
+
     if any(c.get("map_active") for c in st.session_state.file_configs.values()):
         st.divider()
         st.header("🌍 Global Map Visualization")
-        
-        # Start without a fixed location
-        m = folium.Map(zoom_start=2, tiles="CartoDB positron")
-        
-        # We will collect all valid coordinates to auto-center the map later
-        all_lats = []
-        all_lons = []
 
+        # --- INITIALIZE MAP ---
+        m = folium.Map(zoom_start=2, tiles="CartoDB positron")
+        all_lats, all_lons = [], []
+        legend_items = {} # We will populate this in the loop!
+
+        # ==========================================
+        # --- FEATURE 1: MAP TITLE & SUBTITLE ---
+        # ==========================================
+        # We reuse the chart_title and chart_subtitle from your sidebar!
+        title_html = f'''
+             <div style="position: absolute; top: 10px; left: 50px; width: auto; max-width: 400px;
+                         z-index: 9999; background-color: rgba(255, 255, 255, 0.8); 
+                         border-radius: 8px; padding: 10px; box-shadow: 2px 2px 5px rgba(0,0,0,0.3);">
+                 <h3 style="margin-top:0; margin-bottom:5px; color:{global_font_color};">{chart_title}</h3>
+                 <h5 style="margin:0; color: gray;">{chart_subtitle}</h5>
+             </div>
+             '''
+        m.get_root().html.add_child(folium.Element(title_html))
+
+
+        all_lats, all_lons = [], []
         for fname, config in st.session_state.file_configs.items():
-            if not config.get("map_active"):
-                continue
+            if not config.get("map_active"): continue
                 
             df_map = config["df"].copy()
-            x_col = config["x_col"]
+
+            # --- PREPARE DATA FOR RENDERING ---
+
+            # ==========================================
+            # --- FILTER 1: SMART COORDINATE ENGINE ---
+            # ==========================================
             
-            # --- FILTER 1: Clean Coordinates (ROBUST VERSION) ---
-            # Drop empty rows first
-            df_map = df_map.dropna(subset=[config["lat_col"], config["lon_col"]])
-            
-            # Force everything to string, replace commas with dots, remove hidden spaces
-            df_map[config["lat_col"]] = df_map[config["lat_col"]].astype(str).str.replace(',', '.').str.strip()
-            df_map[config["lon_col"]] = df_map[config["lon_col"]].astype(str).str.replace(',', '.').str.strip()
-            
-            # Now convert to numeric. Anything that STILL fails becomes NaN
-            df_map[config["lat_col"]] = pd.to_numeric(df_map[config["lat_col"]], errors='coerce')
-            df_map[config["lon_col"]] = pd.to_numeric(df_map[config["lon_col"]], errors='coerce')
-            
-            # Drop the ones that failed conversion
+            # Capture the raw evidence BEFORE filtering
+            raw_sample = config["df"][[config["lat_col"], config["lon_col"]]].head(5)
             df_map = df_map.dropna(subset=[config["lat_col"], config["lon_col"]])
 
-            # --- DIAGNOSTIC CHECK ---
-            # This tells you if your filters deleted everything
-            if df_map.empty:
-                st.warning(f"⚠️ No valid coordinates found for '{fname}' after applying filters. Check your column selection and date ranges.")
-                continue # Skip drawing pins for this file
-            else:
-                st.success(f"📍 Plotting {len(df_map)} points for '{fname}'...")
+            # Initialize cartographic transformer 
+            # EPSG:32632 is standard UTM Zone 32N (covers most of Germany)
+            # EPSG:4326 is the WGS84 system that Folium requires
+            transformer = Transformer.from_crs("EPSG:32632", "EPSG:4326", always_xy=True)
+
+            # Apply the engine to clean and standardize all coordinates simultaneously
+            df_map[[config["lat_col"], config["lon_col"]]] = df_map.apply(fix_coords, axis=1)
             
+            # Drop any rows that completely failed parsing
+            df_map = df_map.dropna(subset=[config["lat_col"], config["lon_col"]])
+            
+            # 5. GEOGRAPHIC REALITY CHECK 
+            # We enforce this again just to ensure nothing slipped past
+            df_map = df_map[
+                (df_map[config["lat_col"]] >= -90.0) & (df_map[config["lat_col"]] <= 90.0) &
+                (df_map[config["lon_col"]] >= -180.0) & (df_map[config["lon_col"]] <= 180.0)
+            ]
+
+            # --- DIAGNOSTIC WARNING WITH SAMPLES ---
+            if df_map.empty:
+                st.warning(f"⚠️ No valid GPS coordinates found for '{fname}' using columns: '{config['lat_col']}' & '{config['lon_col']}'.")
+                st.info("🔍 **Debug Inspector: Raw Data Sample**")
+                st.dataframe(raw_sample, width='stretch')
+                continue
+
+            # ==========================================
             # --- FILTER 2: Time Interval ---
+            # ==========================================
+        
             if config.get("is_date"):
                 # Parse the dates exactly as we did for the Plotly graph
                 df_map[x_col] = pd.to_datetime(
@@ -461,52 +540,172 @@ if uploaded_files:
                 if config.get("end_date"):
                     df_map = df_map[df_map[x_col].dt.date <= config["end_date"]]
 
+            # ==========================================
             # --- FILTER 3: Max Sampling ---
+            # ==========================================
+
             if len(df_map) > config["max_samples"]:
                 # .sample() picks random rows, ensuring we don't overload Folium
                 df_map = df_map.sample(n=config["max_samples"], random_state=42)
 
-            # --- RENDER MARKERS ---
+            # --- PREPARE DATA FOR RENDERING ---
+            # We need a list of [lat, lon] for Heatmaps or individual markers
+
+            points = []
             for _, row in df_map.iterrows():
-                # Extract lat/lon safely
-                lat = float(row[config["lat_col"]])
-                lon = float(row[config["lon_col"]])
+                lat = row[config["lat_col"]]
+                lon = row[config["lon_col"]]
                 
-                # Keep track of coordinates for bounding box
-                all_lats.append(lat)
-                all_lons.append(lon)
+                lat, lon = float(lat), float(lon)
+                all_lats.append(lat); all_lons.append(lon)
+                
+                # Identify category and color
+                cat = "Total Count" if config["break_col"] == "All" else str(row[config["break_col"]])
+                color = config["styles"].get(cat, {}).get("color", "#636EFA")
 
-                # --- Dynamic Color Mapping ---
-                # 1. Determine which category this row belongs to
-                if config["break_col"] == "All":
-                    cat = "Total Count"
-                else:
-                    cat = str(row[config["break_col"]]) # Force string to match the dictionary keys
-                
-                # 2. Retrieve the custom color assigned in the styling tab. 
-                # If it doesn't exist (e.g., user hasn't opened the styling tab yet), fallback to default blue.
+                # Identify category and color
+                cat = "Total Count" if config["break_col"] == "All" else str(row[config["break_col"]])
                 cat_style = config["styles"].get(cat, {})
-                point_color = cat_style.get("color", "#636EFA")
+                color = cat_style.get("color", "#636EFA")
+                opacity = cat_style.get("opacity", 0.7) # FEATURE: Grab the opacity!
                 
-                # 3. Add the marker with the matched color
-                folium.CircleMarker(
-                    location=[lat, lon],
-                    radius=4,
-                    color=point_color,        # This colors the outer border of the dot
-                    fill_color=point_color,   # This colors the inside of the dot
-                    fill=True,
-                    fill_opacity=0.7,
-                    # We also add the Category to the hover tooltip for even better interpretability!
-                    tooltip=f"<b>File:</b> {fname}<br><b>Category:</b> {cat}<br><b>Lat:</b> {lat}<br><b>Lon:</b> {lon}" 
-                ).add_to(m)
+                # Build the legend dictionary dynamically
+                if cat not in legend_items:
+                    legend_items[cat] = color
 
-        # --- AUTO-CENTER THE MAP ---
-        if all_lats and all_lons:
-            # Tell Folium to zoom exactly to where the points are
+                points.append({'loc': [lat, lon], 'cat': cat, 'color': color, 'opacity': opacity})
+                
+
+            # --- SWITCH RENDER MODE ---
+
+            render_mode = config.get("map_render_mode", "Marker Clusters")
+
+            # ==========================================
+            # --- NEW: GROUP POINTS BY CATEGORY ---
+            # ==========================================
+            # To apply specific colors to Heatmaps and Clusters, we must create 
+            # separate layers for each category within the file.
+            cat_groups = {}
+            for p in points:
+                cat = p['cat']
+                if cat not in cat_groups:
+                    cat_groups[cat] = {'locs': [], 'color': p['color']}
+                cat_groups[cat]['locs'].append(p['loc'])
+
+
+            # ==========================================
+            # --- RENDER ENGINE ---
+            # ==========================================
+            if render_mode == "Heatmap":
+                for cat, group in cat_groups.items():
+                    c_color = group['color']
+                    # Use the first point's opacity for this category group
+                    c_opacity = group['locs_and_ops'][0]['opacity'] if 'locs_and_ops' in group else 0.7 
+                    
+                    # FEATURE 2: Heatmap Opacity
+                    # The maximum intensity (1.0) now caps out at the user's chosen opacity!
+                    custom_gradient = {
+                        0.0: hex_to_rgba(c_color, 0.0), 
+                        0.5: hex_to_rgba(c_color, c_opacity * 0.5), 
+                        1.0: hex_to_rgba(c_color, c_opacity) 
+                    }
+                    
+                    HeatMap(
+                        group['locs'], 
+                        name=f"{fname} - {cat}", # Cleaned up name for the Layer Control
+                        radius=15, 
+                        blur=10, 
+                        gradient=custom_gradient
+                    ).add_to(m)
+
+            elif render_mode == "Marker Clusters":
+                # 2. CLUSTER MODE: Custom CSS colored cluster bubbles per category
+                for cat, group in cat_groups.items():
+                    c_color = group['color']
+                    
+                    # Inject the Python color variable {c_color} into the JavaScript
+                    custom_icon_callback = f"""
+                        function (cluster) {{
+                            return L.divIcon({{
+                                html: '<div style="background-color: white; border: 3px solid {c_color}; color: {c_color}; font-weight: bold; border-radius: 50%; text-align: center; line-height: 30px;">' + cluster.getChildCount() + '</div>',
+                                className: 'marker-cluster',
+                                iconSize: L.point(30, 30)
+                            }});
+                        }}
+                    """
+                    
+                    # Assign the custom javascript icon to this specific cluster group
+                    mc = MarkerCluster(name=f"Cluster: {fname} ({cat})", icon_create_function=custom_icon_callback).add_to(m)
+                    
+                    for loc in group['locs']:
+                        folium.CircleMarker(
+                            location=loc,
+                            radius=5,
+                            color=c_color,
+                            fill=True,
+                            fill_color=c_color,
+                            fill_opacity=0.7,
+                            tooltip=f"File: {fname}<br>Category: {cat}"
+                        ).add_to(mc)
+
+            else:
+                # 3. SCATTER MODE: Classic individual dots
+                for p in points:
+                    folium.CircleMarker(
+                        location=p['loc'], 
+                        radius=4, 
+                        color=p['color'],
+                        fill=True,
+                        fill_color=p['color'],
+                        fill_opacity=0.7,
+                        tooltip=f"File: {fname}<br>Category: {p['cat']}"
+                    ).add_to(m)
+
+
+        # ==========================================
+        # --- FEATURE 3: THE DYNAMIC LEGEND ---
+        # ==========================================
+        # Construct the HTML for the legend based on the colors we discovered
+        legend_html = '''
+        <div style="position: absolute; bottom: 50px; right: 50px; width: auto; 
+                    z-index: 9999; background-color: rgba(255, 255, 255, 0.9); 
+                    border-radius: 8px; padding: 10px; box-shadow: 2px 2px 5px rgba(0,0,0,0.3);">
+            <h4 style="margin-top:0; margin-bottom:10px;">Legend</h4>
+        '''
+        for cat, color in legend_items.items():
+            legend_html += f'<div><span style="background-color: {color}; width: 15px; height: 15px; display: inline-block; border-radius: 50%; margin-right: 8px;"></span>{cat}</div>'
+        legend_html += '</div>'
+        
+        m.get_root().html.add_child(folium.Element(legend_html))
+
+        # ==========================================
+        # --- FEATURE 4: LAYER CONTROL (Z-Index / Toggle) ---
+        # ==========================================
+        # This adds the toggle menu to the top right corner.
+        # It automatically detects every HeatMap, MarkerCluster, or FeatureGroup added with a `name=` attribute!
+        folium.LayerControl(collapsed=False).add_to(m)
+
+        # Auto-center logic
+        if all_lats:
             m.fit_bounds([[min(all_lats), min(all_lons)], [max(all_lats), max(all_lons)]])
 
-        # Display the map in Streamlit
+        # Render the map
         st_folium(m, width=1200, height=600, returned_objects=[])
+
+        # ==========================================
+        # --- FEATURE 5: DOWNLOAD OPTIMAL INTERACTIVE MAP ---
+        # ==========================================
+        # Extract the raw HTML string of the fully built map
+        map_html = m.get_root().render()
+        
+        # Provide a Streamlit download button
+        st.download_button(
+            label="📥 Download Interactive Map (HTML)",
+            data=map_html,
+            file_name="ultra_explorer_map.html",
+            mime="text/html",
+            help="Downloads the map as an interactive webpage. You can open it in any browser!"
+        )
 
 else:
     st.info("👋 Welcome! Please upload one or more CSV/Excel files to start exploring.")
