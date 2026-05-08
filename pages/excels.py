@@ -81,10 +81,17 @@ with st.sidebar:
     paper_color = st.color_picker("Paper Background Color", "#F0F2F6")
     global_font_color = st.color_picker("Global Font Color", "#262730")
 
-    chart_title = st.text_input("Chart Title", "My Unified Visualization")
-    chart_subtitle = st.text_input("Chart Subtitle", "Comparing multiple datasets")
+    # --- Split Titles and Heights ---
+    st.subheader("📊 Graph Settings")
+    graph_title = st.text_input("Chart Title", "My Unified Visualization")
+    graph_subtitle = st.text_input("Chart Subtitle", "Comparing multiple datasets")
+    graph_height = st.slider("Plot Height", 400, 2000, 600)
 
-    plot_height = st.slider("Plot Height", 400, 2000, 600)
+    st.subheader("🌍 Map Settings")
+    map_title = st.text_input("Map Title", "Global Map Visualization")
+    map_subtitle = st.text_input("Map Subtitle", "Geospatial distribution")
+    map_height = st.slider("Map Height", 400, 2000, 600)
+
     font_size = st.number_input("Global Font Size", 5, 50, 15)
     legend_pos = st.selectbox("Legend Position",  ['v', 'h'], index=0)
     text_pos = st.selectbox("Data Label Position", ['top left', 'top center', 'top right', 'middle left', 'middle center', 'middle right', 'bottom left', 'bottom center', 'bottom right'], index=0)
@@ -180,15 +187,14 @@ if uploaded_files:
 
                     # 2. ASK FOR THE FORMAT
                     is_date = st.checkbox("Process as Date", value=True, key=f"isdate_{fname}")
-                    
+                                        
                     if is_date:
                         st.markdown("[Date Format Guide](https://strftime.org/)")
-                        # Default to a common format, but let user override
                         date_format = st.text_input(
                             "Enter Date Format", 
                             value="%d.%m.%Y", 
                             key=f"fmt_{fname}",
-                            help="Example: %d.%m.%Y for 14.08.2023 or %d/%m/%Y for 14/08/2023"
+                            help="Example: %d.%m.%Y for 14.08.2023 or %d/%m/%Y for 14/08/2023 or %m.%d.%y for 08.14.23"
                         )
                         config["date_format"] = date_format
                         config["is_date"] = True
@@ -243,32 +249,51 @@ if uploaded_files:
                 config["map_active"] = st.checkbox("Plot Data on Map", value=config.get("map_active", False), key=f"map_act_{fname}")
 
                 if config["map_active"]:
-                    mc1, mc2 = st.columns(2)
-                    with mc1:
-                        # 1. Coordinate Selection
-                        config["lat_col"] = st.selectbox("Latitude Column", local_df.columns, index=list(local_df.columns).index(config.get("lat_col", local_df.columns[0])), key=f"lat_{fname}")
-                        config["lon_col"] = st.selectbox("Longitude Column", local_df.columns, index=list(local_df.columns).index(config.get("lon_col", local_df.columns[0])), key=f"lon_{fname}")
-                        
-                        # 2. Sampling Filter
-                        config["max_samples"] = st.number_input("Max Points to Render", min_value=1, max_value=20000, value=config.get("max_samples", 1000), step=10, help="High numbers may crash the browser.", key=f"samp_{fname}")
+                    # 1. Coordinate Selection
+                    config["lat_col"] = st.selectbox("Latitude Column", local_df.columns, index=list(local_df.columns).index(config.get("lat_col", local_df.columns[0])), key=f"lat_{fname}")
+                    config["lon_col"] = st.selectbox("Longitude Column", local_df.columns, index=list(local_df.columns).index(config.get("lon_col", local_df.columns[0])), key=f"lon_{fname}")
+                    
+                    # 2. Sampling Filter
+                    config["max_samples"] = st.number_input("Max Points to Render", min_value=1, max_value=30000, value=15000, step=1, help="High numbers may crash the browser.", key=f"samp_{fname}")
 
-                        config["map_render_mode"] = st.selectbox(
-                            "Render Mode", 
-                            ["Scatter (Individual)", "Marker Clusters", "Heatmap"], 
-                            index=1, # Default to Clusters for best balance
-                            key=f"rmode_{fname}",
-                            help="Clusters: Groups markers for performance. Heatmap: Shows density hotspots."
-                        )
+                    config["map_render_mode"] = st.selectbox(
+                        "Render Mode", 
+                        ["Scatter (Individual)", "Marker Clusters", "Heatmap"], 
+                        index=1, # Default to Clusters for best balance
+                        key=f"rmode_{fname}",
+                        help="Clusters: Groups markers for performance. Heatmap: Shows density hotspots."
+                    )
 
-                    with mc2:
-                        # 3. Time Interval Filter
-                        st.write("⏱️ **Time Interval Filter**")
-                        if config.get("is_date"):
-                            # We use None as default to allow 'open-ended' filtering if left blank
-                            config["start_date"] = st.date_input("Start Date", value=config.get("start_date", None), key=f"sd_{fname}")
-                            config["end_date"] = st.date_input("End Date", value=config.get("end_date", None), key=f"ed_{fname}")
-                        else:
-                            st.info("Enable 'Process as Date' in the Selection tab to use time filtering.")
+    # ==========================================
+    # --- GLOBAL TIME FILTER ---
+    # ==========================================
+    st.divider()
+    st.subheader("⏱️ Global Time Filter")
+    st.markdown("Filter all active datasets simultaneously. Leave blank for no limit.")
+    
+    tc1, tc2 = st.columns(2)
+    with tc1:
+        global_start_date = st.date_input("Global Start Date", value=None)
+    with tc2:
+        global_end_date = st.date_input("Global End Date", value=None)
+
+    # --- NEW: Dynamic Subtitle Toggle ---
+    auto_subtitle = st.checkbox("Include selected dates in chart & map subtitles", value=False)
+    
+    # Generate the formatted date string if the user checked the box
+    date_suffix = ""
+    if auto_subtitle:
+        if global_start_date and global_end_date:
+            # e.g., (01.01.2023 - 31.12.2023)
+            date_suffix = f" ({global_start_date.strftime('%d.%m.%Y')} - {global_end_date.strftime('%d.%m.%Y')})"
+        elif global_start_date:
+            date_suffix = f" (From {global_start_date.strftime('%d.%m.%Y')})"
+        elif global_end_date:
+            date_suffix = f" (Until {global_end_date.strftime('%d.%m.%Y')})"
+
+    # Create the final subtitle strings by combining the sidebar input and the generated suffix
+    final_graph_subtitle = f"{graph_subtitle}{date_suffix}"
+    final_map_subtitle = f"{map_subtitle}{date_suffix}"
 
     # 3. Dynamic Plotting
     st.divider()
@@ -284,21 +309,27 @@ if uploaded_files:
         f_df = config["df"].copy()
         x_col = config["x_col"]
 
-        # --- 1. FORCE UNIFORM DATETIME (Manual Format Mode) ---
+        # --- 1. FORCE UNIFORM DATETIME & APPLY GLOBAL FILTER ---
         if config.get("is_date"):
-            # Convert raw data to string first to ensure consistency
             raw_strings = config["df"][config["x_col"]].astype(str).str.strip()
             
-            # Use the format provided by the user in the UI
             f_df[x_col] = pd.to_datetime(
                 raw_strings,
                 format=config.get("date_format"),
                 errors='coerce'
             )
             
-            # Provide immediate feedback if the user's format failed
-            if f_df[x_col].isna().all():
+            # --- THE NEW GLOBAL FILTER LOGIC ---
+            if global_start_date:
+                f_df = f_df[f_df[x_col].dt.date >= global_start_date]
+            if global_end_date:
+                f_df = f_df[f_df[x_col].dt.date <= global_end_date]
+                
+            if f_df[x_col].isna().all() and not config["df"].empty:
                 st.warning(f"⚠️ File '{fname}': Format '{config.get('date_format')}' does not match '{raw_strings.iloc[0]}'")
+
+        # --- Save the globally filtered dataframe for Folium to use later ---
+        config["df_filtered"] = f_df.copy()
 
         # 2. FILTERING & AGGREGATION (as previously discussed)
         if config["break_col"] == "All":
@@ -403,17 +434,17 @@ if uploaded_files:
     # --- Inside the Dynamic Plotting Section (at the end) ---
     
     # 1. Construct the HTML Title String
-    # If there is a subtitle, we add a line break (<br>) and make the subtitle slightly smaller using <i> or <span>
-    if chart_subtitle:
-        full_title_text = f"<b>{chart_title}</b><br><span style='font-size: {font_size * 0.8}px; color: {global_font_color};'>{chart_subtitle}</span>"
+    # --- Now using final_graph_subtitle ---
+    if final_graph_subtitle:
+        full_title_text = f"<b>{graph_title}</b><br><span style='font-size: {font_size * 0.8}px; color: {global_font_color};'>{final_graph_subtitle}</span>"
     else:
-        full_title_text = f"<b>{chart_title}</b>"
+        full_title_text = f"<b>{graph_title}</b>"
 
     # 2. Global Layout Enforcement
     fig.update_layout(
         plot_bgcolor=bg_color,
         paper_bgcolor=paper_color,
-        height=plot_height,
+        height=graph_height,
         template="plotly_white",
         barmode='group',
         
@@ -469,13 +500,13 @@ if uploaded_files:
         # ==========================================
         # --- FEATURE 1: MAP TITLE & SUBTITLE ---
         # ==========================================
-        # We reuse the chart_title and chart_subtitle from your sidebar!
+        # We reuse the map_title and map_subtitle from your sidebar!
         title_html = f'''
              <div style="position: absolute; top: 10px; left: 50px; width: auto; max-width: 400px;
                          z-index: 9999; background-color: rgba(255, 255, 255, 0.8); 
                          border-radius: 8px; padding: 10px; box-shadow: 2px 2px 5px rgba(0,0,0,0.3);">
-                 <h3 style="margin-top:0; margin-bottom:5px; color:{global_font_color};">{chart_title}</h3>
-                 <h5 style="margin:0; color: gray;">{chart_subtitle}</h5>
+                 <h3 style="margin-top:0; margin-bottom:5px; color:{global_font_color};">{map_title}</h3>
+                 <h5 style="margin:0; color: gray;">{final_map_subtitle}</h5>
              </div>
              '''
         m.get_root().html.add_child(folium.Element(title_html))
@@ -484,8 +515,9 @@ if uploaded_files:
         all_lats, all_lons = [], []
         for fname, config in st.session_state.file_configs.items():
             if not config.get("map_active"): continue
-                
-            df_map = config["df"].copy()
+            
+            # --- Use the globally filtered dataframe ---
+            df_map = config.get("df_filtered", config["df"]).copy()
 
             # --- PREPARE DATA FOR RENDERING ---
 
@@ -523,25 +555,7 @@ if uploaded_files:
                 continue
 
             # ==========================================
-            # --- FILTER 2: Time Interval ---
-            # ==========================================
-        
-            if config.get("is_date"):
-                # Parse the dates exactly as we did for the Plotly graph
-                df_map[x_col] = pd.to_datetime(
-                    df_map[x_col].astype(str).str.strip(),
-                    format=config.get("date_format"),
-                    errors='coerce'
-                )
-                
-                # Apply the boundaries if the user selected them
-                if config.get("start_date"):
-                    df_map = df_map[df_map[x_col].dt.date >= config["start_date"]]
-                if config.get("end_date"):
-                    df_map = df_map[df_map[x_col].dt.date <= config["end_date"]]
-
-            # ==========================================
-            # --- FILTER 3: Max Sampling ---
+            # --- FILTER 2: Max Sampling ---
             # ==========================================
 
             if len(df_map) > config["max_samples"]:
@@ -661,28 +675,9 @@ if uploaded_files:
                         tooltip=f"File: {fname}<br>Category: {p['cat']}"
                     ).add_to(m)
 
-
-        # ==========================================
-        # --- FEATURE 3: THE DYNAMIC LEGEND ---
-        # ==========================================
-        # Construct the HTML for the legend based on the colors we discovered
-        legend_html = '''
-        <div style="position: absolute; bottom: 50px; right: 50px; width: auto; 
-                    z-index: 9999; background-color: rgba(255, 255, 255, 0.9); 
-                    border-radius: 8px; padding: 10px; box-shadow: 2px 2px 5px rgba(0,0,0,0.3);">
-            <h4 style="margin-top:0; margin-bottom:10px;">Legend</h4>
-        '''
-        for cat, color in legend_items.items():
-            legend_html += f'<div><span style="background-color: {color}; width: 15px; height: 15px; display: inline-block; border-radius: 50%; margin-right: 8px;"></span>{cat}</div>'
-        legend_html += '</div>'
-        
-        m.get_root().html.add_child(folium.Element(legend_html))
-
         # ==========================================
         # --- FEATURE 4: LAYER CONTROL (Z-Index / Toggle) ---
         # ==========================================
-        # This adds the toggle menu to the top right corner.
-        # It automatically detects every HeatMap, MarkerCluster, or FeatureGroup added with a `name=` attribute!
         folium.LayerControl(collapsed=False).add_to(m)
 
         # Auto-center logic
@@ -690,8 +685,8 @@ if uploaded_files:
             m.fit_bounds([[min(all_lats), min(all_lons)], [max(all_lats), max(all_lons)]])
 
         # Render the map
-        st_folium(m, width=1200, height=600, returned_objects=[])
-
+        st_folium(m, width='stretch', height=map_height, returned_objects=[])
+        
         # ==========================================
         # --- FEATURE 5: DOWNLOAD OPTIMAL INTERACTIVE MAP ---
         # ==========================================
@@ -707,5 +702,113 @@ if uploaded_files:
             help="Downloads the map as an interactive webpage. You can open it in any browser!"
         )
 
+    # ==========================================
+    # --- BONUS: PLOTLY NATIVE MAP (PNG EXPORT) ---
+    # ==========================================
+    st.divider()
+    st.header("📸 Exportable Plotly Map")
+    st.markdown("This alternative map uses Plotly Mapbox. Hover over the top right corner of the map to use the native **'Download plot as a png'** camera icon.")
+
+    if st.checkbox("Render Plotly Map (For PNG Export)", value=False):
+        fig_map = go.Figure()
+        
+        map_lats = []
+        map_lons = []
+
+        for fname, config in st.session_state.file_configs.items():
+            if not config.get("map_active"): continue
+            
+            # 1. Grab the globally filtered data
+            df_pmap = config.get("df_filtered", config["df"]).copy()
+            
+            # 2. Apply the coordinate fix engine (since Folium applied it locally, we must re-apply it here)
+            df_pmap[[config["lat_col"], config["lon_col"]]] = df_pmap.apply(fix_coords, axis=1)
+            df_pmap = df_pmap.dropna(subset=[config["lat_col"], config["lon_col"]])
+            
+            if df_pmap.empty: continue
+            
+            # 3. Apply max samples limit
+            if len(df_pmap) > config["max_samples"]:
+                df_pmap = df_pmap.sample(n=config["max_samples"], random_state=42)
+
+            # 4. Group by category to apply specific colors
+            if config["break_col"] == "All":
+                df_pmap['Category'] = "Total Count"
+            else:
+                df_pmap['Category'] = df_pmap[config["break_col"]].astype(str)
+
+            render_mode = config.get("map_render_mode", "Scatter (Individual)")
+
+            # 5. Build the Traces
+            for cat in df_pmap['Category'].unique():
+                cat_df = df_pmap[df_pmap['Category'] == cat]
+                
+                # Fetch styles
+                cat_style = config["styles"].get(cat, {})
+                color = cat_style.get("color", "#636EFA")
+                opacity = cat_style.get("opacity", 0.7)
+                
+                # Collect coords for auto-centering later
+                map_lats.extend(cat_df[config["lat_col"]].tolist())
+                map_lons.extend(cat_df[config["lon_col"]].tolist())
+
+                if render_mode == "Heatmap":
+                    # --- DENSITY / HEATMAP MODE ---
+                    fig_map.add_trace(go.Densitymapbox(
+                        lat=cat_df[config["lat_col"]],
+                        lon=cat_df[config["lon_col"]],
+                        name=f"{fname} - {cat}",
+                        # Create a custom colorscale fading from transparent to the chosen color
+                        colorscale=[[0, hex_to_rgba(color, 0)], [1, hex_to_rgba(color, opacity)]],
+                        radius=15,
+                        showscale=False # Hides the colorbar to keep the UI clean
+                    ))
+                else:
+                    # --- SCATTER MODE ---
+                    # Note: Plotly doesn't do HTML CSS clusters like Folium natively without Dash, 
+                    # so we render Clusters as slightly larger scattered points here for visual parity.
+                    fig_map.add_trace(go.Scattermapbox(
+                        lat=cat_df[config["lat_col"]],
+                        lon=cat_df[config["lon_col"]],
+                        mode='markers',
+                        name=f"{fname} - {cat}",
+                        marker=dict(
+                            size=8,
+                            color=color,
+                            opacity=opacity
+                        ),
+                        text=f"File: {fname}<br>Category: {cat}",
+                        hoverinfo='text'
+                    ))
+
+        # 6. Dynamic Map Centering Calculation
+        center_lat = sum(map_lats) / len(map_lats) if map_lats else 0
+        center_lon = sum(map_lons) / len(map_lons) if map_lons else 0
+
+        # 7. Apply Global Layout Variables
+        fig_map.update_layout(
+            title=dict(
+                text=f"<b>{map_title}</b><br><span style='font-size: {font_size * 0.8}px; color: {global_font_color};'>{map_subtitle}</span>",
+                x=0.5, xanchor='center'
+            ),
+            mapbox=dict(
+                style="carto-positron", # Free map tiles that look like Folium's default
+                center=dict(lat=center_lat, lon=center_lon),
+                zoom=3
+            ),
+            height=map_height,
+            paper_bgcolor=bg_color,
+            plot_bgcolor=bg_color,
+            font=dict(color=global_font_color, size=font_size),
+            margin={"r":0,"t":60,"l":0,"b":0},
+            legend=dict(
+                font=dict(color=global_font_color),
+                bgcolor=hex_to_rgba(paper_color, 0.8) # Slight transparent backing for readability
+            )
+        )
+
+        st.plotly_chart(fig_map, width='stretch')
+
 else:
     st.info("👋 Welcome! Please upload one or more CSV/Excel files to start exploring.")
+
