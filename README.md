@@ -29,6 +29,14 @@ A dedicated annotation environment to tag images and videos for emotion and land
 - **Custom Persistence:** Add new custom emotions directly in the app, which are permanently saved to `list_of_emotions.json`.
 - **Output:** Saves a clean, structured JSON file next to your media files containing all entered annotations.
 
+### 📊 Excels
+A comprehensive Multi-File Unified Visualizer for data analytics and mapping.
+- **Multi-File Support:** Upload multiple `.csv` or `.xlsx` files to compare disparate datasets on a single timeline.
+- **Independent Configuration:** Select X-Axis, Breakdown columns, date formats, and trace styles for each uploaded file independently.
+- **Geospatial Mapping:** Visualize data on interactive Folium maps using clustering, heatmaps, or scatter points. Includes smart coordinate auto-fixing.
+- **Global Filtering:** Apply global time boundaries to synchronize and filter all active datasets simultaneously.
+- **Export Capabilities:** Download interactive Folium maps as HTML or native Plotly maps as PNGs.
+
 ---
 
 ## 🚀 How to Run the App (Non-Tech Tutorial)
@@ -129,7 +137,7 @@ If you are a developer and wish to run the code directly on your host machine:
 ## 📂 Project Structure
 
 - `main.py`: Entry point and documentation hub for the app.
-- `pages/`: Contains the individual module screens (`videos_clipper.py`, `transformations.py`, `labels.py`).
+- `pages/`: Contains the individual module screens (`videos_clipper.py`, `transformations.py`, `labels.py`, `excels.py`).
 - `img_functions.py`: Holds the core mathematical, OpenCV, and MediaPipe logic for image operations.
 - `video_functions.py`: Holds logic for decoding spreadsheets and manipulating FFMPEG streams.
 - `Dockerfile` & `docker-compose.yml`: Instructions for building the virtual container environment.

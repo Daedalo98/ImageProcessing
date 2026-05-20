@@ -6,7 +6,6 @@ import folium # Maps core library
 from streamlit_folium import st_folium # Streamlit wrapper for Folium
 from folium.plugins import MarkerCluster, HeatMap
 
-import pyproj
 from pyproj import Transformer
 
 # --- THE FIX: Hex to RGBA Converter ---

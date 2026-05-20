@@ -87,6 +87,32 @@ PAGE_TUTORIALS = {
 4. Save annotations to JSON and continue labeling.
 
 **Tip:** Add new emotions using the sidebar expander so they persist in `list_of_emotions.json`.
+""",
+    "Excels": """
+**Purpose:**
+- Upload, configure, and visualize multiple CSV or Excel datasets simultaneously.
+- Overlay time-series data and geographic coordinates on a unified interactive dashboard.
+
+**Setup:**
+1. Have your `.csv`, `.xls`, or `.xlsx` files ready.
+2. Ensure your data has a column for time/grouping (X-Axis) and optionally latitude/longitude columns for mapping.
+
+**Key Features:**
+- Multi-file upload with independent configuration per file.
+- Automatic date parsing and global time filtering.
+- Extensive trace styling (bar, line, area, scatter) with custom colors and opacities.
+- Interactive Plotly time-series charts with data breakdown.
+- Advanced Geographic Mapping using Folium (Clustered, Heatmap, Scatter modes) and Plotly.
+- Interactive HTML map downloads.
+
+**Workflow:**
+1. Upload one or more spreadsheet files.
+2. For each file, select the X-Axis, Breakdown Column, and trace styling.
+3. Enable "Plot Data on Map" if your data contains geospatial coordinates.
+4. Apply global time filters to sync all data series.
+5. Explore the interactive plots and maps below the configuration area.
+
+**Tip:** You can download the Folium map as an interactive HTML file to share with others without needing the app!
 """
 }
 
@@ -148,6 +174,23 @@ def labels_page():
     )
     render_tutorial("Labels")
 
+def excels_page():
+    st.title("📊 Excels")
+    st.subheader("Feature Overview")
+    st.markdown(
+        """
+- **Multi-file spreadsheet ingestion** for CSV and Excel formats.
+- **Unified chronological timeline** to compare disparate datasets.
+- **Dynamic styling engine** for traces (bars, lines, scatter, heatmaps).
+- **Global geographic mapping** with smart coordinate auto-fixing and rendering modes.
+- **Exportable maps and charts** via HTML and PNG.
+"""
+    )
+    st.write(
+        "This page documents how to use the multi-file visualizer to configure, plot, and map data from various spreadsheets simultaneously."
+    )
+    render_tutorial("Excels")
+
 
 # --- MAIN NAVIGATION ---
 def main():
@@ -156,7 +199,8 @@ def main():
     pages = {
         "Videos Clipper": videos_clipper_page,
         "Transformations": transformations_page,
-        "Labels": labels_page
+        "Labels": labels_page,
+        "Excels": excels_page
     }
     
     selection = st.sidebar.radio("Go to", list(pages.keys()))
