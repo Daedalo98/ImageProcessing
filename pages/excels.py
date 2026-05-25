@@ -198,6 +198,18 @@ if uploaded_files:
                         config["date_format"] = date_format
                         config["is_date"] = True
 
+                        # ==========================================
+                        # --- TIME AGGREGATION SELECTOR ---
+                        # ==========================================
+                        time_agg = st.selectbox(
+                            "Time Aggregation",
+                            # NEW: Added 'Month-of-Year (Seasonality)'
+                            ["Daily (Raw)", "Weekly", "Monthly (Continuous)", "Month-of-Year (Seasonality)"],
+                            key=f"agg_{fname}",
+                            help="Choose Continuous for a timeline, or Seasonality to overlap months."
+                        )
+                        config["time_agg"] = time_agg
+
                 with c2:
                     st.subheader("Filters")
                     # LOGIC CHANGE: Only show multiselect if a specific column is chosen
@@ -327,6 +339,41 @@ if uploaded_files:
             if f_df[x_col].isna().all() and not config["df"].empty:
                 st.warning(f"⚠️ File '{fname}': Format '{config.get('date_format')}' does not match '{raw_strings.iloc[0]}'")
 
+            # ==========================================
+            # --- APPLY TIME AGGREGATION ---
+            # ==========================================
+            # We check if the user selected an aggregation method other than Daily
+            if "time_agg" in config:
+                agg_type = config["time_agg"]
+                
+                try:
+                    if agg_type == "Weekly":
+                        f_df[x_col] = f_df[x_col].dt.to_period('W').dt.start_time
+                        st.success(f"🗓️ File '{fname}': Successfully aggregated data week-by-week.")
+                        
+                    elif agg_type == "Monthly (Continuous)":
+                        f_df[x_col] = f_df[x_col].dt.to_period('M').dt.start_time
+                        st.success(f"📅 File '{fname}': Aggregated month-by-month on a continuous timeline.")
+                    
+                    # ==========================================
+                    # --- SEASONALITY EXTRACTION ---
+                    # ==========================================
+                    elif agg_type == "Month-of-Year (Seasonality)":
+                        # Extracts "01 - January", "02 - February" to ensure correct calendar sorting
+                        f_df[x_col] = f_df[x_col].dt.strftime('%m - %B')
+                        # We save a flag to tell Plotly to change the X-Axis type later
+                        config["force_category"] = True 
+                        st.success(f"🍁 File '{fname}': Overlapping data by month for seasonal view.")
+                        
+                    else:
+                        st.info(f"⏱️ File '{fname}': Plotting using raw/daily chronological data.")
+                        # Ensure we reset the flag if the user switches back to daily
+                        config["force_category"] = False 
+                        
+                except Exception as e:
+                    st.error(f"❌ File '{fname}': Failed to apply {agg_type} aggregation. Error: {e}")
+
+
         # --- Save the globally filtered dataframe for Folium to use later ---
         config["df_filtered"] = f_df.copy()
 
@@ -439,6 +486,15 @@ if uploaded_files:
     else:
         full_title_text = f"<b>{graph_title}</b>"
 
+
+    # ==========================================
+    # --- NEW: DYNAMIC AXIS TYPE ---
+    # ==========================================
+    # Check if any currently active file requires a categorical axis
+    needs_category_axis = any(c.get("force_category") for c in st.session_state.file_configs.values() if c.get("active"))
+    dynamic_x_type = "category" if needs_category_axis else "date"
+
+
     # 2. Global Layout Enforcement
     fig.update_layout(
         plot_bgcolor=bg_color,
@@ -470,9 +526,15 @@ if uploaded_files:
         xaxis=dict(
             title=dict(text=x_axis_label, font=dict(color=global_font_color)),
             tickfont=dict(color=global_font_color),
-            type="date", 
-            tickformat="%d-%m-%Y",  
-            tickangle=-45
+            
+            # --- THE FIX ---
+            type=dynamic_x_type, 
+            # We also disable the strict date tickformat if it's a category
+            tickformat=None if needs_category_axis else "%d-%m-%Y",  
+            
+            tickangle=-45,
+            # Force Plotly to respect the string order we generated (01, 02, 03...)
+            categoryorder="category ascending" if needs_category_axis else None 
         ),
         
         yaxis=dict(
