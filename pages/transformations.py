@@ -158,7 +158,23 @@ with st.sidebar:
         accept_multiple_files=True
     )
 
-    output_folder = st.text_input("Output Path", value="./outputs", help="Directory where processed files will be saved relative to the project folder (e.g., ./outputs, ./results). Will be created if it doesn't exist.")
+    # Give the user the choice of output strategy
+    output_strategy = st.radio(
+        "Output Destination Strategy:",
+        [
+            "Separate Output Folder", 
+            "Same as Input Folder (Local Directory Only)"
+        ],
+        help="Choose where to save the files. 'Same as Input Folder' will save processed files right next to their originals."
+    )
+
+    # Modify the text input to disable dynamically if "Same as Input Folder" is chosen
+    output_folder = st.text_input(
+        "Output Path", 
+        value="./outputs", 
+        disabled=(output_strategy != "Separate Output Folder"), # Greys out when not applicable
+        help="Directory where processed files will be saved relative to the project folder. Ignored if saving in the same folder."
+    )
 
     if uploaded_files:
         st.success(f"Successfully loaded {len(uploaded_files)} image(s) or video(s).")
@@ -478,7 +494,7 @@ with st.sidebar:
         [
             "Output processed video file (.mp4)", 
             "Save frames as individual images",
-            "Both (Video file AND individual frames)" # <--- ADD THIS LINE
+            "Both (Video file AND individual frames)"
         ],
         help="Choose how processed videos are saved to the output folder."
     )
@@ -487,7 +503,10 @@ with st.sidebar:
         if not uploaded_files:
             st.error("Please upload files first.")
         else:
-            os.makedirs(output_folder, exist_ok=True)
+            # Force the use of the text-input output folder for web uploads
+            # since uploaded files don't have a local directory context.
+            active_output_folder = output_folder if output_folder else "./outputs"
+            os.makedirs(active_output_folder, exist_ok=True)
             
             # 1. Filter files based on user choice
             files_to_process = []
@@ -520,7 +539,7 @@ with st.sidebar:
                         tfile.close()
                         
                         # Call our helper function
-                        fn.process_video_file(tfile.name, file.name, output_folder, pipeline_config, video_output_mode, fn)
+                        fn.process_video_file(tfile.name, file.name, active_output_folder, pipeline_config, video_output_mode, fn)
                         os.remove(tfile.name) # Clean up
                     else:
                         # --- IMAGE LOGIC ---
@@ -542,13 +561,13 @@ with st.sidebar:
                                     break # Optional: break out of the pipeline for this specific image if a step fails
                                     
                         # Save
-                        save_path = os.path.join(output_folder, f"mod_{file.name}")
+                        save_path = os.path.join(active_output_folder, f"mod_{file.name}")
                         cv2.imwrite(save_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR) if len(img.shape)==3 else img)
 
                     progress_bar.progress((idx + 1) / len(files_to_process), text=f"Overall Batch Progress: {idx + 1}/{len(files_to_process)}")
 
             # Save Log as JSON
-            log_path = os.path.join(output_folder, "pipeline_config.json")
+            log_path = os.path.join(active_output_folder, "pipeline_config.json")
             try:
                 with open(log_path, "w") as f:
                     # pipeline_config is already a list of dictionaries!
@@ -568,7 +587,8 @@ with st.sidebar:
         if not input_folder or not input_path.is_dir():
             st.error("Please provide a valid input folder path.")
         else:
-            os.makedirs(output_folder, exist_ok=True)
+            active_output_folder = output_folder if output_strategy == "Separate Output Folder" else input_folder
+            os.makedirs(active_output_folder, exist_ok=True)
             
             # 1. Filter files based on user choice across ALL subfolders
             files_to_process = []
@@ -595,10 +615,22 @@ with st.sidebar:
                 # 2. Iterate through filtered list
                 for idx, file_path in enumerate(files_to_process):
                     is_vid = file_path.name.lower().endswith(VIDEO_EXTS)
+
+                    if output_strategy == "Same as Input Folder (Local Directory Only)":
+                        # Save the file directly in the directory it was found
+                        file_output_dir = file_path.parent
+                    else:
+                        # Determine relative path to recreate the subfolder structure in the output directory
+                        rel_path = file_path.relative_to(input_path)
+                        file_output_dir = Path(active_output_folder) / rel_path.parent
+                    
+                    # Ensure the directory exists (necessary for Separate Folder strategy, 
+                    # harmless for Same Folder strategy since it already exists)
+                    file_output_dir.mkdir(parents=True, exist_ok=True)
                     
                     # Determine relative path to recreate the subfolder structure in the output directory
                     rel_path = file_path.relative_to(input_path)
-                    file_output_dir = Path(output_folder) / rel_path.parent
+                    file_output_dir = Path(active_output_folder) / rel_path.parent
                     file_output_dir.mkdir(parents=True, exist_ok=True)
                     
                     if is_vid:
@@ -639,7 +671,7 @@ with st.sidebar:
                     progress_bar.progress((idx + 1) / len(files_to_process), text=f"Overall Batch Progress: {idx + 1}/{len(files_to_process)}")
 
             # Save Log as JSON
-            log_path = os.path.join(output_folder, "pipeline_config.json")
+            log_path = os.path.join(active_output_folder, "pipeline_config.json")
             try:
                 with open(log_path, "w") as f:
                     json.dump(pipeline_config, f, indent=4)
@@ -648,6 +680,8 @@ with st.sidebar:
                 st.error(f"Batch completed, but failed to save JSON config. Error: {e}")
 
     st.markdown("<div style='text-align: center; margin: 10px 0;'><b>OR</b></div>", unsafe_allow_html=True)
+
+    
 # --- MAIN LAYOUT (Side-by-Side View) ---
 
 st.header("Live Preview & Information")
