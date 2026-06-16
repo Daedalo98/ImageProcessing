@@ -148,9 +148,7 @@ if st.button("Start Pre-flight Check and Video Cutting Process", type="primary")
     for vid_name_str in unique_videos:
         vid_path = fn.find_video_recursive(source_folder, vid_name_str)
 
-        if not vid_path:
-            validation_errors.append(f"Missing Video: '{vid_name_str}' could not be found in {source_folder}")
-        else:
+        if vid_path:
             try:
                 # Ultra-fast duration check using OpenCV instead of loading MoviePy
                 cap = cv2.VideoCapture(str(vid_path))
@@ -165,6 +163,8 @@ if st.button("Start Pre-flight Check and Video Cutting Process", type="primary")
                     video_cache[vid_name_str] = {"path": vid_path, "duration": duration}
             except Exception as e:
                 validation_errors.append(f"Error reading video '{vid_name_str}': {e}")
+        else:
+            validation_errors.append(f"Video file not found for '{vid_name_str}' in source folder.")
 
     # Step B: Validate all dictionary entries
     valid_dict = {} 
