@@ -199,9 +199,14 @@ if st.button("Start Pre-flight Check and Video Cutting Process", type="primary")
                     validation_errors.append(f"{err_context} ❌ Times cannot be negative (Start: {start_sec}s, End: {end_sec}s).")
                     row_has_error = True
 
-                elif start_sec >= end_sec:
+                elif start_sec > end_sec:
                     validation_errors.append(f"{err_context} ❌ Start time ({start_sec}s) must be before End time ({end_sec}s).")
                     row_has_error = True
+
+                ## if start and end in the same moment, adjust to start earlier and end later
+                elif start_sec == end_sec:
+                    start_sec = start_sec - 0.5
+                    end_sec = end_sec + 0.5                    
                 
                 elif vid_name_str in video_cache:
                     vid_dur = video_cache[vid_name_str]["duration"]
