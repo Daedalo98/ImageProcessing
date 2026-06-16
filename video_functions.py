@@ -96,7 +96,7 @@ def find_video_recursive(source_dir, target_name):
     """
     source_path = Path(source_dir)
     target_stem = Path(target_name).stem.lower()
-    valid_exts = ['.mp4', '.mov', '.avi', '.mkv', '.webm']
+    valid_exts = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.mpeg', '.mpg', '.wmv', '.m4v'] 
     
     for file in source_path.rglob('*'):
         if file.is_file() and file.stem.lower() == target_stem and file.suffix.lower() in valid_exts:
