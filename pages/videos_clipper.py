@@ -239,9 +239,8 @@ if st.button("Start Pre-flight Check and Video Cutting Process", type="primary")
                 cut["end_sec"] = end_sec
                 valid_dict[vid_name_str].append(cut)
 
-            if row_has_error:
+            else: # If there was an error, we skip this row but also add a note in the logs that it was skipped due to errors.
                 validation_errors.append(f"{err_context} ❌ This row will be skipped.")
-                del valid_dict[vid_name_str] # Remove the entire video group if any row has a critical error
 
     total_valid_cuts = sum(len(cuts) for cuts in valid_dict.values())
 
