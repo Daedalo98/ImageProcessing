@@ -161,8 +161,10 @@ if st.button("Start Pre-flight Check and Video Cutting Process", type="primary")
                     validation_errors.append(f"Invalid Video: '{vid_name_str}' appears to have 0 duration or is corrupted.")
                 else:
                     video_cache[vid_name_str] = {"path": vid_path, "duration": duration}
+
             except Exception as e:
                 validation_errors.append(f"Error reading video '{vid_name_str}': {e}")
+
         else:
             validation_errors.append(f"Video file not found for '{vid_name_str}' in source folder.")
 
@@ -194,21 +196,25 @@ if st.button("Start Pre-flight Check and Video Cutting Process", type="primary")
             # If time parsing was successful, do the rigorous compatibility checks
             if not err1 and not err2:
                 end_sec = (start_sec + end_or_dur_sec) if st.session_state.time_mode == "Duration" else end_or_dur_sec
-                
-                if start_sec < 0 or end_sec < 0:
-                    validation_errors.append(f"{err_context} ❌ Times cannot be negative (Start: {start_sec}s, End: {end_sec}s).")
+
+                if start_sec < 0:
+                    validation_errors.append(f"{err_context} ❌ Start time cannot be negative (Start: {start_sec}s).")
                     row_has_error = True
 
-                elif start_sec > end_sec:
-                    validation_errors.append(f"{err_context} ❌ Start time ({start_sec}s) must be before End time ({end_sec}s).")
+                if end_sec < 0:
+                    validation_errors.append(f"{err_context} ❌ End time cannot be negative (Start: {start_sec}s, End: {end_sec}s).")
                     row_has_error = True
 
                 ## if start and end in the same moment, adjust to start earlier and end later
-                elif start_sec == end_sec:
-                    start_sec = start_sec - 0.5
-                    end_sec = end_sec + 0.5                    
+                if start_sec == end_sec:
+                    start_sec = max(0.0, start_sec - 0.5)
+                    end_sec = end_sec + 0.5    
+
+                if start_sec > end_sec:
+                    validation_errors.append(f"{err_context} ❌ Start time ({start_sec}s) must be before End time ({end_sec}s).")
+                    row_has_error = True                
                 
-                elif vid_name_str in video_cache:
+                if vid_name_str in video_cache:
                     vid_dur = video_cache[vid_name_str]["duration"]
                     
                     if start_sec >= vid_dur:
@@ -223,7 +229,8 @@ if st.button("Start Pre-flight Check and Video Cutting Process", type="primary")
                         end_sec = vid_dur # Actually apply the fix to the variable
                         # Note: We do NOT set row_has_error = True here, so it proceeds as valid!
                         
-                elif not vid_name_str in video_cache:
+                else: ## not vid_name_str in video_cache:
+                    validation_errors.append(f"{err_context} ❌ Video not found in selected folder.")
                     row_has_error = True
 
             # If no critical errors, add it to the valid_dict 
@@ -232,8 +239,9 @@ if st.button("Start Pre-flight Check and Video Cutting Process", type="primary")
                 cut["end_sec"] = end_sec
                 valid_dict[vid_name_str].append(cut)
 
-        if not valid_dict[vid_name_str]:
-            del valid_dict[vid_name_str]
+            if row_has_error:
+                validation_errors.append(f"{err_context} ❌ This row will be skipped.")
+                del valid_dict[vid_name_str] # Remove the entire video group if any row has a critical error
 
     total_valid_cuts = sum(len(cuts) for cuts in valid_dict.values())
 
