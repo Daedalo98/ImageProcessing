@@ -173,48 +173,48 @@ if st.button("Start Pre-flight Check and Video Cutting Process", type="primary")
     validation_warnings = [] # NEW: We will store non-fatal auto-fixes here
     
     for vid_name_str, cuts in st.session_state.video_dict.items():
-        valid_dict[vid_name_str] = [] 
-        
-        for cut in cuts:
-            # Change global_row to our new sheet_row variable
-            row_idx = cut["sheet_row"]
-            sheet = cut["sheet"]
-            row_has_error = False
+        if vid_name_str in video_cache:
+            valid_dict[vid_name_str] = [] 
             
-            err_context = f"📄 Sheet '{sheet}' | 🎥 '{vid_name_str}' | Row {row_idx}"
-            
-            start_sec, err1 = fn.parse_time(cut["start_val"], err_context)
-            end_or_dur_sec, err2 = fn.parse_time(cut["end_val"], err_context)
-            
-            if err1: 
-                validation_errors.append(err1)
-                row_has_error = True
-            if err2: 
-                validation_errors.append(err2)
-                row_has_error = True
-
-            # If time parsing was successful, do the rigorous compatibility checks
-            if not err1 and not err2:
-                end_sec = (start_sec + end_or_dur_sec) if st.session_state.time_mode == "Duration" else end_or_dur_sec
-
-                if start_sec < 0:
-                    validation_errors.append(f"{err_context} ❌ Start time cannot be negative (Start: {start_sec}s).")
-                    row_has_error = True
-
-                if end_sec < 0:
-                    validation_errors.append(f"{err_context} ❌ End time cannot be negative (Start: {start_sec}s, End: {end_sec}s).")
-                    row_has_error = True
-
-                ## if start and end in the same moment, adjust to start earlier and end later
-                if start_sec == end_sec:
-                    start_sec = max(0.0, start_sec - 0.5)
-                    end_sec = end_sec + 0.5    
-
-                if start_sec > end_sec:
-                    validation_errors.append(f"{err_context} ❌ Start time ({start_sec}s) must be before End time ({end_sec}s).")
-                    row_has_error = True                
+            for cut in cuts:
+                # Change global_row to our new sheet_row variable
+                row_idx = cut["sheet_row"]
+                sheet = cut["sheet"]
+                row_has_error = False
                 
-                if vid_name_str in video_cache:
+                err_context = f"📄 Sheet '{sheet}' | 🎥 '{vid_name_str}' | Row {row_idx}"
+                
+                start_sec, err1 = fn.parse_time(cut["start_val"], err_context)
+                end_or_dur_sec, err2 = fn.parse_time(cut["end_val"], err_context)
+                
+                if err1: 
+                    validation_errors.append(err1)
+                    row_has_error = True
+                if err2: 
+                    validation_errors.append(err2)
+                    row_has_error = True
+
+                # If time parsing was successful, do the rigorous compatibility checks
+                if not err1 and not err2:
+                    end_sec = (start_sec + end_or_dur_sec) if st.session_state.time_mode == "Duration" else end_or_dur_sec
+
+                    if start_sec < 0:
+                        validation_errors.append(f"{err_context} ❌ Start time cannot be negative (Start: {start_sec}s).")
+                        row_has_error = True
+
+                    if end_sec < 0:
+                        validation_errors.append(f"{err_context} ❌ End time cannot be negative (Start: {start_sec}s, End: {end_sec}s).")
+                        row_has_error = True
+
+                    ## if start and end in the same moment, adjust to start earlier and end later
+                    if start_sec == end_sec:
+                        start_sec = max(0.0, start_sec - 0.5)
+                        end_sec = end_sec + 0.5    
+
+                    if start_sec > end_sec:
+                        validation_errors.append(f"{err_context} ❌ Start time ({start_sec}s) must be before End time ({end_sec}s).")
+                        row_has_error = True                
+                    
                     vid_dur = video_cache[vid_name_str]["duration"]
                     
                     if start_sec >= vid_dur:
@@ -228,19 +228,15 @@ if st.button("Start Pre-flight Check and Video Cutting Process", type="primary")
                         )
                         end_sec = vid_dur # Actually apply the fix to the variable
                         # Note: We do NOT set row_has_error = True here, so it proceeds as valid!
-                        
-                else: ## not vid_name_str in video_cache:
-                    validation_errors.append(f"{err_context} ❌ Video not found in selected folder.")
-                    row_has_error = True
 
-            # If no critical errors, add it to the valid_dict 
-            if not row_has_error:
-                cut["start_sec"] = start_sec
-                cut["end_sec"] = end_sec
-                valid_dict[vid_name_str].append(cut)
+                # If no critical errors, add it to the valid_dict 
+                if not row_has_error:
+                    cut["start_sec"] = start_sec
+                    cut["end_sec"] = end_sec
+                    valid_dict[vid_name_str].append(cut)
 
-            else: # If there was an error, we skip this row but also add a note in the logs that it was skipped due to errors.
-                validation_errors.append(f"{err_context} ❌ This row will be skipped.")
+                else: # If there was an error, we skip this row but also add a note in the logs that it was skipped due to errors.
+                    validation_errors.append(f"{err_context} ❌ This row will be skipped.")
 
     total_valid_cuts = sum(len(cuts) for cuts in valid_dict.values())
 
